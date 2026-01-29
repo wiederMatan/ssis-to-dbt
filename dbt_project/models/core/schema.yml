@@ -1,0 +1,185 @@
+version: 2
+
+models:
+  - name: dim_customer
+    description: >
+      Customer Dimension with SCD Type 2 support.
+      Source: CustomerDataLoad.dtsx -> Merge to Dimension (Execute SQL Task)
+    meta:
+      ssis_package: CustomerDataLoad.dtsx
+      ssis_task: Merge to Dimension
+    columns:
+      - name: customer_key
+        description: "Surrogate key"
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        description: "Natural key from source"
+        tests:
+          - not_null
+
+      - name: first_name
+        description: "Customer first name"
+
+      - name: last_name
+        description: "Customer last name"
+
+      - name: full_name
+        description: "Full name (FirstName + LastName)"
+
+      - name: email
+        description: "Customer email address"
+        tests:
+          - not_null
+
+      - name: email_domain
+        description: "Email domain extracted from address"
+
+      - name: customer_hash
+        description: "Hash for SCD change detection"
+
+      - name: is_current
+        description: "SCD Type 2 current record flag"
+        tests:
+          - not_null
+
+  - name: fct_sales
+    description: >
+      Sales Fact Table with dimension key lookups.
+      Source: SalesFactETL.dtsx -> Load Sales Facts (Data Flow Task)
+    meta:
+      ssis_package: SalesFactETL.dtsx
+      ssis_task: Load Sales Facts
+    columns:
+      - name: sale_key
+        description: "Surrogate key"
+        tests:
+          - not_null
+          - unique
+
+      - name: sale_id
+        description: "Natural key from source"
+        tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "Foreign key to dim_date"
+        tests:
+          - not_null
+          - relationships:
+              to: source('datawarehouse', 'dim_date')
+              field: DateKey
+
+      - name: customer_key
+        description: "Foreign key to dim_customer"
+        tests:
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_key
+
+      - name: product_key
+        description: "Foreign key to dim_product"
+        tests:
+          - relationships:
+              to: source('datawarehouse', 'dim_product')
+              field: ProductKey
+
+      - name: quantity
+        description: "Number of units sold"
+        tests:
+          - not_null
+
+      - name: gross_amount
+        description: "Quantity * UnitPrice"
+
+      - name: discount_amount
+        description: "Applied discount amount"
+
+      - name: net_amount
+        description: "Final sale amount after discount"
+        tests:
+          - not_null
+
+  - name: fct_inventory_snapshot
+    description: >
+      Inventory Snapshot Fact Table.
+      Source: InventorySync.dtsx -> Load Inventory Updates (Data Flow Task)
+    meta:
+      ssis_package: InventorySync.dtsx
+      ssis_task: Load Inventory Updates
+      manual_review: "Script Task 'Call Inventory API' requires manual implementation"
+    columns:
+      - name: inventory_snapshot_key
+        description: "Surrogate key"
+        tests:
+          - not_null
+          - unique
+
+      - name: product_key
+        description: "Foreign key to dim_product"
+        tests:
+          - relationships:
+              to: source('datawarehouse', 'dim_product')
+              field: ProductKey
+
+      - name: warehouse_key
+        description: "Foreign key to dim_warehouse"
+        tests:
+          - relationships:
+              to: source('datawarehouse', 'dim_warehouse')
+              field: WarehouseKey
+
+      - name: quantity_on_hand
+        description: "Current stock quantity"
+
+      - name: inventory_value
+        description: "Total value of inventory"
+
+      - name: stock_status
+        description: "Calculated stock status"
+        tests:
+          - accepted_values:
+              values: ['Out of Stock', 'Low Stock', 'In Stock']
+
+  - name: agg_daily_sales
+    description: >
+      Daily Sales Aggregate Table.
+      Source: SalesFactETL.dtsx -> Update Aggregates (Execute SQL Task)
+    meta:
+      ssis_package: SalesFactETL.dtsx
+      ssis_task: Update Aggregates
+    columns:
+      - name: daily_sales_key
+        description: "Surrogate key"
+        tests:
+          - not_null
+          - unique
+
+      - name: date_key
+        description: "Date dimension key"
+        tests:
+          - not_null
+
+      - name: product_key
+        description: "Product dimension key"
+
+      - name: customer_key
+        description: "Customer dimension key"
+
+      - name: total_quantity
+        description: "Sum of quantities sold"
+
+      - name: total_net_amount
+        description: "Sum of net amounts"
+
+      - name: transaction_count
+        description: "Number of transactions"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+
+      - name: avg_transaction_value
+        description: "Average value per transaction"

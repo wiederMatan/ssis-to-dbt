@@ -1,0 +1,64 @@
+version: 2
+
+sources:
+  - name: sales
+    description: "Sales OLTP database - Transactional sales system"
+    database: Sales_OLTP
+    schema: sales
+    meta:
+      owner: "ETL Team"
+      ssis_connection: "SalesDB"
+      server: "SALESSRV"
+
+    tables:
+      - name: transactions
+        description: "Sales transactions from point of sale system"
+        columns:
+          - name: SaleID
+            description: "Unique transaction identifier"
+            data_type: BIGINT
+            tests:
+              - not_null
+              - unique
+
+          - name: CustomerID
+            description: "Foreign key to customer"
+            data_type: INT
+            tests:
+              - not_null
+
+          - name: ProductID
+            description: "Foreign key to product"
+            data_type: INT
+            tests:
+              - not_null
+
+          - name: SaleDate
+            description: "Date and time of sale"
+            data_type: DATETIME
+            tests:
+              - not_null
+
+          - name: Quantity
+            description: "Number of units sold"
+            data_type: INT
+
+          - name: UnitPrice
+            description: "Price per unit at time of sale"
+            data_type: NUMERIC(18,2)
+
+          - name: DiscountPercent
+            description: "Discount percentage applied"
+            data_type: NUMERIC(5,2)
+
+          - name: SalesRepID
+            description: "Foreign key to sales representative"
+            data_type: INT
+
+          - name: StoreID
+            description: "Foreign key to store location"
+            data_type: INT
+
+          - name: IsVoided
+            description: "Flag indicating if transaction was voided"
+            data_type: BIT

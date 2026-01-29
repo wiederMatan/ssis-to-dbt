@@ -1,0 +1,38 @@
+name: 'ssis_migration'
+version: '1.0.0'
+config-version: 2
+
+profile: 'ssis_migration'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+vars:
+  # Default date range for incremental loads
+  start_date: '2024-01-01'
+  end_date: '2024-12-31'
+
+models:
+  ssis_migration:
+    # Source layer configuration
+    sources:
+      +materialized: ephemeral
+
+    # Staging layer configuration
+    staging:
+      +materialized: view
+      +schema: staging
+
+    # Core layer configuration
+    core:
+      +materialized: table
+      +schema: core

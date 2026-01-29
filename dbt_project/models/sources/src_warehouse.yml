@@ -1,0 +1,60 @@
+version: 2
+
+sources:
+  - name: warehouse
+    description: "Warehouse Data Mart - Inventory management staging"
+    database: WarehouseDM
+    schema: stg
+    meta:
+      owner: "ETL Team"
+      ssis_connection: "WarehouseDW"
+      server: "DWSRV"
+
+    tables:
+      - name: inventory_api
+        identifier: InventoryAPI
+        description: "Staged inventory data from external API"
+        columns:
+          - name: ProductSKU
+            description: "Product stock keeping unit"
+            data_type: NVARCHAR(50)
+            tests:
+              - not_null
+
+          - name: WarehouseCode
+            description: "Warehouse location code"
+            data_type: NVARCHAR(10)
+            tests:
+              - not_null
+
+          - name: QuantityOnHand
+            description: "Current quantity in stock"
+            data_type: INT
+
+          - name: QuantityReserved
+            description: "Quantity reserved for orders"
+            data_type: INT
+
+          - name: QuantityAvailable
+            description: "Quantity available for sale"
+            data_type: INT
+
+          - name: LastCountDate
+            description: "Date of last physical inventory count"
+            data_type: DATE
+
+          - name: ReorderPoint
+            description: "Minimum quantity before reorder"
+            data_type: INT
+
+          - name: MaxStockLevel
+            description: "Maximum stock level"
+            data_type: INT
+
+          - name: UnitCost
+            description: "Cost per unit"
+            data_type: NUMERIC(18,4)
+
+          - name: ProcessedFlag
+            description: "Flag indicating if record has been processed"
+            data_type: BIT

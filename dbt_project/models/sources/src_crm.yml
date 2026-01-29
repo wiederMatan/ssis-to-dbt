@@ -1,0 +1,48 @@
+version: 2
+
+sources:
+  - name: crm
+    description: "CRM Production database - Customer relationship management system"
+    database: CRM_Production
+    schema: crm
+    meta:
+      owner: "ETL Team"
+      ssis_connection: "SourceDB"
+      server: "CRMSRV"
+
+    tables:
+      - name: customers
+        description: "Customer master data from CRM system"
+        columns:
+          - name: CustomerID
+            description: "Unique customer identifier"
+            data_type: INT
+            tests:
+              - not_null
+              - unique
+
+          - name: FirstName
+            description: "Customer first name"
+            data_type: NVARCHAR(50)
+
+          - name: LastName
+            description: "Customer last name"
+            data_type: NVARCHAR(50)
+
+          - name: Email
+            description: "Customer email address"
+            data_type: NVARCHAR(255)
+            tests:
+              - not_null
+
+          - name: Phone
+            description: "Customer phone number"
+            data_type: NVARCHAR(20)
+
+          - name: CreatedDate
+            description: "Date customer record was created"
+            data_type: DATETIME
+
+          - name: ModifiedDate
+            description: "Date customer record was last modified"
+            data_type: DATETIME

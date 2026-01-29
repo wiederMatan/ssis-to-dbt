@@ -1,0 +1,136 @@
+version: 2
+
+models:
+  - name: stg_crm__customers
+    description: >
+      Staging model for CRM customers.
+      Source: CustomerDataLoad.dtsx -> Load Customer Data (Data Flow Task)
+    meta:
+      ssis_package: CustomerDataLoad.dtsx
+      ssis_task: Load Customer Data
+    columns:
+      - name: customer_id
+        description: "Unique customer identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: first_name
+        description: "Customer first name"
+
+      - name: last_name
+        description: "Customer last name"
+
+      - name: full_name
+        description: "Derived: FirstName + ' ' + LastName"
+
+      - name: email
+        description: "Customer email address"
+        tests:
+          - not_null
+
+      - name: email_domain
+        description: "Derived: Domain extracted from email"
+
+      - name: phone
+        description: "Customer phone number"
+
+      - name: created_date
+        description: "Date customer record was created"
+
+      - name: modified_date
+        description: "Date customer record was last modified"
+
+  - name: stg_sales__transactions
+    description: >
+      Staging model for sales transactions.
+      Source: SalesFactETL.dtsx -> Load Sales Facts (Data Flow Task)
+    meta:
+      ssis_package: SalesFactETL.dtsx
+      ssis_task: Load Sales Facts
+    columns:
+      - name: sale_id
+        description: "Unique transaction identifier"
+        tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        description: "Foreign key to customer"
+        tests:
+          - not_null
+
+      - name: product_id
+        description: "Foreign key to product"
+        tests:
+          - not_null
+
+      - name: sale_date
+        description: "Date and time of sale"
+        tests:
+          - not_null
+
+      - name: quantity
+        description: "Number of units sold"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 1
+
+      - name: unit_price
+        description: "Price per unit at time of sale"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+
+      - name: discount_percent
+        description: "Discount percentage applied"
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              min_value: 0
+              max_value: 100
+
+      - name: gross_amount
+        description: "Derived: Quantity * UnitPrice"
+
+      - name: discount_amount
+        description: "Derived: GrossAmount * (DiscountPercent / 100)"
+
+      - name: net_amount
+        description: "Derived: GrossAmount - DiscountAmount"
+
+  - name: stg_warehouse__inventory
+    description: >
+      Staging model for inventory data from API.
+      Source: InventorySync.dtsx -> Load Inventory Updates (Data Flow Task)
+    meta:
+      ssis_package: InventorySync.dtsx
+      ssis_task: Load Inventory Updates
+      manual_review: "Script Task 'Call Inventory API' requires manual implementation"
+    columns:
+      - name: product_sku
+        description: "Product stock keeping unit"
+        tests:
+          - not_null
+
+      - name: warehouse_code
+        description: "Warehouse location code"
+        tests:
+          - not_null
+
+      - name: quantity_on_hand
+        description: "Current quantity in stock"
+
+      - name: quantity_available
+        description: "Quantity available for sale"
+
+      - name: inventory_value
+        description: "Derived: QuantityOnHand * UnitCost"
+
+      - name: stock_status
+        description: "Derived: Out of Stock / Low Stock / In Stock"
+        tests:
+          - accepted_values:
+              values: ['Out of Stock', 'Low Stock', 'In Stock']
+
+      - name: days_of_supply
+        description: "Derived: Estimated days of supply remaining"

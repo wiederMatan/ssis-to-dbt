@@ -1,0 +1,805 @@
+[
+  {
+    "name": "InventorySync",
+    "description": "Inventory synchronization with external API - includes Script Task for manual review",
+    "creation_date": "2024-02-01T09:00:00",
+    "creator_name": "ETLDeveloper",
+    "creator_computer": "DEVSERVER",
+    "file_path": "/Users/matanwieder/Projects/ssis-to-dbt/samples/ssis_packages/InventorySync.dtsx",
+    "file_size_bytes": 18014,
+    "connection_managers": [
+      {
+        "id": "{E5F6A7B8-C9D0-1234-EFAB-567890123456}",
+        "name": "InventoryAPI",
+        "description": "HTTP connection to Inventory REST API",
+        "connection_string": "https://api.inventory.example.com/v2",
+        "server": null,
+        "database": null,
+        "provider": null
+      },
+      {
+        "id": "",
+        "name": "",
+        "description": null,
+        "connection_string": "",
+        "server": null,
+        "database": null,
+        "provider": null
+      },
+      {
+        "id": "{F6A7B8C9-D0E1-2345-FABC-678901234567}",
+        "name": "WarehouseDW",
+        "description": "Connection to Warehouse Data Mart",
+        "connection_string": "Data Source=DWSRV;Initial Catalog=WarehouseDM;Provider=SQLNCLI11.1;Integrated Security=SSPI;",
+        "server": "DWSRV",
+        "database": "WarehouseDM",
+        "provider": "SQLNCLI11.1"
+      },
+      {
+        "id": "",
+        "name": "",
+        "description": null,
+        "connection_string": "",
+        "server": null,
+        "database": null,
+        "provider": null
+      }
+    ],
+    "variables": [
+      {
+        "namespace": "User",
+        "name": "LastSyncTime",
+        "data_type": "DT_DATE",
+        "value": "2024-01-31T00:00:00",
+        "expression": null,
+        "description": null
+      },
+      {
+        "namespace": "User",
+        "name": "APIEndpoint",
+        "data_type": "DT_WSTR",
+        "value": "/inventory/changes",
+        "expression": null,
+        "description": null
+      },
+      {
+        "namespace": "User",
+        "name": "APIResponse",
+        "data_type": "DT_WSTR",
+        "value": null,
+        "expression": null,
+        "description": null
+      },
+      {
+        "namespace": "User",
+        "name": "RecordsProcessed",
+        "data_type": "DT_I4",
+        "value": "0",
+        "expression": null,
+        "description": null
+      }
+    ],
+    "execute_sql_tasks": [
+      {
+        "name": "Get Last Sync Time",
+        "description": "Retrieve the timestamp of the last successful inventory sync",
+        "connection_manager": "{F6A7B8C9-D0E1-2345-FABC-678901234567}",
+        "sql_statement": "SELECT TOP 1 LastSyncTime FROM etl.SyncLog WHERE SyncType = 'Inventory'   AND Status = 'Success' ORDER BY LastSyncTime DESC;",
+        "result_set": "ResultSetType_SingleRow",
+        "parameters": []
+      },
+      {
+        "name": "Update Sync Log",
+        "description": "Record successful sync completion",
+        "connection_manager": "{F6A7B8C9-D0E1-2345-FABC-678901234567}",
+        "sql_statement": "INSERT INTO etl.SyncLog (SyncType, LastSyncTime, RecordsProcessed, Status, CompletedAt) VALUES ('Inventory', GETDATE(), @RecordsProcessed, 'Success', GETDATE());  UPDATE stg.InventoryAPI SET ProcessedFlag = 1 WHERE ProcessedFlag = 0;",
+        "result_set": "None",
+        "parameters": []
+      }
+    ],
+    "data_flow_tasks": [
+      {
+        "name": "Load Inventory Updates",
+        "description": "Load inventory changes from staging to dimension",
+        "sources": [
+          {
+            "name": "Staged Data Source",
+            "component_type": "OLEDBSource",
+            "description": "Read inventory data staged by Script Task",
+            "connection_manager": "Package.ConnectionManagers[WarehouseDW]",
+            "sql_command": "SELECT\n    ProductSKU,\n    WarehouseCode,\n    QuantityOnHand,\n    QuantityReserved,\n    QuantityAvailable,\n    LastCountDate,\n    ReorderPoint,\n    MaxStockLevel,\n    UnitCost\nFROM stg.InventoryAPI\nWHERE ProcessedFlag = 0",
+            "table_name": null,
+            "columns": [
+              {
+                "name": "ProductSKU",
+                "ssis_type": "wstr",
+                "sql_type": "NVARCHAR(50)",
+                "length": 50,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "WarehouseCode",
+                "ssis_type": "wstr",
+                "sql_type": "NVARCHAR(10)",
+                "length": 10,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "QuantityOnHand",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "QuantityReserved",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "QuantityAvailable",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "LastCountDate",
+                "ssis_type": "dbDate",
+                "sql_type": "DATE",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "ReorderPoint",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "MaxStockLevel",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "UnitCost",
+                "ssis_type": "numeric",
+                "sql_type": "NUMERIC(18,4)",
+                "length": null,
+                "precision": 18,
+                "scale": 4,
+                "nullable": true
+              }
+            ]
+          }
+        ],
+        "destinations": [
+          {
+            "name": "Inventory Destination",
+            "component_type": "OLEDBDestination",
+            "description": "Load to inventory snapshot table",
+            "connection_manager": "Package.ConnectionManagers[WarehouseDW]",
+            "table_name": "[fact].[InventorySnapshot]",
+            "columns": []
+          }
+        ],
+        "lookups": [
+          {
+            "name": "Lookup Product",
+            "description": "Get ProductKey from SKU",
+            "connection_manager": "Package.ConnectionManagers[WarehouseDW]",
+            "sql_command": "SELECT ProductKey, SKU FROM dim.Product WHERE IsActive = 1",
+            "cache_mode": "Full",
+            "no_match_behavior": "IgnoreFailure",
+            "input_columns": [],
+            "join_columns": [],
+            "output_columns": [
+              "ProductKey"
+            ]
+          },
+          {
+            "name": "Lookup Warehouse",
+            "description": "Get WarehouseKey from code",
+            "connection_manager": "Package.ConnectionManagers[WarehouseDW]",
+            "sql_command": "SELECT WarehouseKey, WarehouseCode FROM dim.Warehouse",
+            "cache_mode": "Full",
+            "no_match_behavior": "IgnoreFailure",
+            "input_columns": [],
+            "join_columns": [],
+            "output_columns": [
+              "WarehouseKey"
+            ]
+          }
+        ],
+        "derived_columns": [
+          {
+            "name": "InventoryValue",
+            "expression": "[QuantityOnHand] * [UnitCost]",
+            "friendly_expression": "QuantityOnHand * UnitCost",
+            "output_type": "numeric",
+            "output_length": null
+          },
+          {
+            "name": "StockStatus",
+            "expression": "[QuantityAvailable] <= 0 ? \"Out of Stock\" : ([QuantityAvailable] < [ReorderPoint] ? \"Low Stock\" : \"In Stock\")",
+            "friendly_expression": "CASE WHEN QuantityAvailable <= 0 THEN 'Out of Stock' WHEN QuantityAvailable < ReorderPoint THEN 'Low Stock' ELSE 'In Stock' END",
+            "output_type": "wstr",
+            "output_length": 20
+          },
+          {
+            "name": "DaysOfSupply",
+            "expression": "[ReorderPoint] > 0 ? ([QuantityAvailable] / [ReorderPoint]) * 30 : 0",
+            "friendly_expression": "(QuantityAvailable / ReorderPoint) * 30",
+            "output_type": "i4",
+            "output_length": null
+          }
+        ]
+      }
+    ],
+    "script_tasks": [
+      {
+        "name": "Call Inventory API",
+        "description": "Call external REST API to fetch inventory changes - REQUIRES MANUAL CONVERSION",
+        "script_language": "CSharp",
+        "read_only_variables": [
+          "User::LastSyncTime",
+          "User::APIEndpoint"
+        ],
+        "read_write_variables": [
+          "User::APIResponse",
+          "User::RecordsProcessed"
+        ],
+        "manual_review_required": true,
+        "review_reason": "Script Tasks require manual conversion to dbt macros or Python"
+      }
+    ],
+    "send_mail_tasks": [
+      {
+        "name": "Send Completion Email",
+        "description": "Send email notification - SKIPPED in dbt conversion, document only",
+        "smtp_server": "smtp.example.com",
+        "from_address": "etl@example.com",
+        "to_address": "dataops@example.com",
+        "subject": "Inventory Sync Complete",
+        "message_source": "Inventory sync completed successfully. Records processed: @[User::RecordsProcessed]",
+        "skip_reason": "Send Mail Tasks are not converted - handle notifications externally"
+      }
+    ],
+    "precedence_constraints": [
+      {
+        "from_task": "Get Last Sync Time",
+        "to_task": "Call Inventory API",
+        "constraint_type": "Success"
+      },
+      {
+        "from_task": "Call Inventory API",
+        "to_task": "Load Inventory Updates",
+        "constraint_type": "Success"
+      },
+      {
+        "from_task": "Load Inventory Updates",
+        "to_task": "Update Sync Log",
+        "constraint_type": "Success"
+      },
+      {
+        "from_task": "Update Sync Log",
+        "to_task": "Send Completion Email",
+        "constraint_type": "Success"
+      }
+    ],
+    "parsing_warnings": [
+      "Script Task 'Call Inventory API' flagged for manual review",
+      "Send Mail Task 'Send Completion Email' will not be converted"
+    ],
+    "parsing_errors": []
+  },
+  {
+    "name": "CustomerDataLoad",
+    "description": "Load customer data from CRM to DW dimension table",
+    "creation_date": "2024-01-15T10:30:00",
+    "creator_name": "ETLDeveloper",
+    "creator_computer": "DEVSERVER",
+    "file_path": "/Users/matanwieder/Projects/ssis-to-dbt/samples/ssis_packages/CustomerDataLoad.dtsx",
+    "file_size_bytes": 10712,
+    "connection_managers": [
+      {
+        "id": "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}",
+        "name": "SourceDB",
+        "description": "Connection to CRM source database",
+        "connection_string": "Data Source=CRMSRV;Initial Catalog=CRM_Production;Provider=SQLNCLI11.1;Integrated Security=SSPI;",
+        "server": "CRMSRV",
+        "database": "CRM_Production",
+        "provider": "SQLNCLI11.1"
+      },
+      {
+        "id": "",
+        "name": "",
+        "description": null,
+        "connection_string": "",
+        "server": null,
+        "database": null,
+        "provider": null
+      },
+      {
+        "id": "{B2C3D4E5-F6A7-8901-BCDE-F23456789012}",
+        "name": "TargetDW",
+        "description": "Connection to Data Warehouse",
+        "connection_string": "Data Source=DWSRV;Initial Catalog=DataWarehouse;Provider=SQLNCLI11.1;Integrated Security=SSPI;",
+        "server": "DWSRV",
+        "database": "DataWarehouse",
+        "provider": "SQLNCLI11.1"
+      },
+      {
+        "id": "",
+        "name": "",
+        "description": null,
+        "connection_string": "",
+        "server": null,
+        "database": null,
+        "provider": null
+      }
+    ],
+    "variables": [
+      {
+        "namespace": "User",
+        "name": "LoadDate",
+        "data_type": "DT_DATE",
+        "value": "2024-01-15T00:00:00",
+        "expression": null,
+        "description": null
+      },
+      {
+        "namespace": "User",
+        "name": "BatchSize",
+        "data_type": "DT_I4",
+        "value": "1000",
+        "expression": null,
+        "description": null
+      }
+    ],
+    "execute_sql_tasks": [
+      {
+        "name": "Truncate Staging",
+        "description": "Clear staging table before load",
+        "connection_manager": "{B2C3D4E5-F6A7-8901-BCDE-F23456789012}",
+        "sql_statement": "TRUNCATE TABLE stg.Customer;",
+        "result_set": "None",
+        "parameters": []
+      },
+      {
+        "name": "Merge to Dimension",
+        "description": "Merge staged data into dimension table using SCD Type 2 logic",
+        "connection_manager": "{B2C3D4E5-F6A7-8901-BCDE-F23456789012}",
+        "sql_statement": "-- Merge customer data from staging to dimension MERGE dim.Customer AS target USING stg.Customer AS source ON target.CustomerID = source.CustomerID WHEN MATCHED AND target.CustomerHash != HASHBYTES('SHA2_256', CONCAT(source.FirstName, source.LastName, source.Email)) THEN UPDATE SET     FirstName = source.FirstName,     LastName = source.LastName,     FullName = source.FullName,     Email = source.Email,     Phone = source.Phone,     EmailDomain = source.EmailDomain,     ModifiedDate = GETDATE(),     IsCurrent = 1 WHEN NOT MATCHED BY TARGET THEN INSERT (CustomerID, FirstName, LastName, FullName, Email, Phone, EmailDomain, CreatedDate, ModifiedDate, IsCurrent) VALUES (source.CustomerID, source.FirstName, source.LastName, source.FullName, source.Email, source.Phone, source.EmailDomain, source.CreatedDate, GETDATE(), 1);",
+        "result_set": "None",
+        "parameters": []
+      }
+    ],
+    "data_flow_tasks": [
+      {
+        "name": "Load Customer Data",
+        "description": "Extract customers from CRM and load to staging",
+        "sources": [
+          {
+            "name": "OLE DB Source",
+            "component_type": "OLEDBSource",
+            "description": "Extract customer records from CRM",
+            "connection_manager": "Package.ConnectionManagers[SourceDB]",
+            "sql_command": "SELECT\n    CustomerID,\n    FirstName,\n    LastName,\n    Email,\n    Phone,\n    CreatedDate,\n    ModifiedDate\nFROM crm.Customers\nWHERE ModifiedDate >= ?",
+            "table_name": null,
+            "columns": [
+              {
+                "name": "CustomerID",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "FirstName",
+                "ssis_type": "wstr",
+                "sql_type": "NVARCHAR(50)",
+                "length": 50,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "LastName",
+                "ssis_type": "wstr",
+                "sql_type": "NVARCHAR(50)",
+                "length": 50,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "Email",
+                "ssis_type": "wstr",
+                "sql_type": "NVARCHAR(255)",
+                "length": 255,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "Phone",
+                "ssis_type": "wstr",
+                "sql_type": "NVARCHAR(20)",
+                "length": 20,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "CreatedDate",
+                "ssis_type": "dbTimeStamp",
+                "sql_type": "DATETIME",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "ModifiedDate",
+                "ssis_type": "dbTimeStamp",
+                "sql_type": "DATETIME",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              }
+            ]
+          }
+        ],
+        "destinations": [
+          {
+            "name": "OLE DB Destination",
+            "component_type": "OLEDBDestination",
+            "description": "Load to staging table",
+            "connection_manager": "Package.ConnectionManagers[TargetDW]",
+            "table_name": "[stg].[Customer]",
+            "columns": []
+          }
+        ],
+        "lookups": [],
+        "derived_columns": [
+          {
+            "name": "FullName",
+            "expression": "[FirstName] + \" \" + [LastName]",
+            "friendly_expression": "FirstName + \" \" + LastName",
+            "output_type": "wstr",
+            "output_length": 101
+          },
+          {
+            "name": "EmailDomain",
+            "expression": "SUBSTRING([Email], FINDSTRING([Email], \"@\", 1) + 1, LEN([Email]))",
+            "friendly_expression": "Extract domain from Email",
+            "output_type": "wstr",
+            "output_length": 100
+          }
+        ]
+      }
+    ],
+    "script_tasks": [],
+    "send_mail_tasks": [],
+    "precedence_constraints": [
+      {
+        "from_task": "Truncate Staging",
+        "to_task": "Load Customer Data",
+        "constraint_type": "Success"
+      },
+      {
+        "from_task": "Load Customer Data",
+        "to_task": "Merge to Dimension",
+        "constraint_type": "Success"
+      }
+    ],
+    "parsing_warnings": [],
+    "parsing_errors": []
+  },
+  {
+    "name": "SalesFactETL",
+    "description": "Sales fact table ETL with dimension lookups",
+    "creation_date": "2024-01-20T14:00:00",
+    "creator_name": "ETLDeveloper",
+    "creator_computer": "DEVSERVER",
+    "file_path": "/Users/matanwieder/Projects/ssis-to-dbt/samples/ssis_packages/SalesFactETL.dtsx",
+    "file_size_bytes": 18179,
+    "connection_managers": [
+      {
+        "id": "{C3D4E5F6-A7B8-9012-CDEF-345678901234}",
+        "name": "SalesDB",
+        "description": "Connection to transactional Sales database",
+        "connection_string": "Data Source=SALESSRV;Initial Catalog=Sales_OLTP;Provider=SQLNCLI11.1;Integrated Security=SSPI;",
+        "server": "SALESSRV",
+        "database": "Sales_OLTP",
+        "provider": "SQLNCLI11.1"
+      },
+      {
+        "id": "",
+        "name": "",
+        "description": null,
+        "connection_string": "",
+        "server": null,
+        "database": null,
+        "provider": null
+      },
+      {
+        "id": "{D4E5F6A7-B8C9-0123-DEFA-456789012345}",
+        "name": "DW",
+        "description": "Connection to Data Warehouse",
+        "connection_string": "Data Source=DWSRV;Initial Catalog=DataWarehouse;Provider=SQLNCLI11.1;Integrated Security=SSPI;",
+        "server": "DWSRV",
+        "database": "DataWarehouse",
+        "provider": "SQLNCLI11.1"
+      },
+      {
+        "id": "",
+        "name": "",
+        "description": null,
+        "connection_string": "",
+        "server": null,
+        "database": null,
+        "provider": null
+      }
+    ],
+    "variables": [
+      {
+        "namespace": "User",
+        "name": "StartDate",
+        "data_type": "DT_DATE",
+        "value": "2024-01-01T00:00:00",
+        "expression": null,
+        "description": null
+      },
+      {
+        "namespace": "User",
+        "name": "EndDate",
+        "data_type": "DT_DATE",
+        "value": "2024-01-31T23:59:59",
+        "expression": null,
+        "description": null
+      },
+      {
+        "namespace": "User",
+        "name": "RowCount",
+        "data_type": "DT_I4",
+        "value": "0",
+        "expression": null,
+        "description": null
+      }
+    ],
+    "execute_sql_tasks": [
+      {
+        "name": "Pre-ETL Validation",
+        "description": "Verify source data availability and dimension tables are populated",
+        "connection_manager": "{D4E5F6A7-B8C9-0123-DEFA-456789012345}",
+        "sql_statement": "-- Verify dimension tables have data DECLARE @CustomerCount INT, @ProductCount INT, @DateCount INT; SELECT @CustomerCount = COUNT(*) FROM dim.Customer WHERE IsCurrent = 1; SELECT @ProductCount = COUNT(*) FROM dim.Product WHERE IsActive = 1; SELECT @DateCount = COUNT(*) FROM dim.Date;  IF @CustomerCount = 0 OR @ProductCount = 0 OR @DateCount = 0     RAISERROR('Dimension tables are empty. Cannot proceed with fact load.', 16, 1);",
+        "result_set": "None",
+        "parameters": []
+      },
+      {
+        "name": "Update Aggregates",
+        "description": "Refresh aggregate tables after fact load",
+        "connection_manager": "{D4E5F6A7-B8C9-0123-DEFA-456789012345}",
+        "sql_statement": "-- Refresh daily sales aggregates DELETE FROM agg.DailySales WHERE SaleDate BETWEEN @StartDate AND @EndDate;  INSERT INTO agg.DailySales (DateKey, ProductKey, CustomerKey, TotalQuantity, TotalNetAmount, TransactionCount) SELECT     DateKey,     ProductKey,     CustomerKey,     SUM(Quantity) AS TotalQuantity,     SUM(NetAmount) AS TotalNetAmount,     COUNT(*) AS TransactionCount FROM fact.Sales WHERE DateKey IN (SELECT DateKey FROM dim.Date WHERE FullDate BETWEEN @StartDate AND @EndDate) GROUP BY DateKey, ProductKey, CustomerKey;",
+        "result_set": "None",
+        "parameters": []
+      }
+    ],
+    "data_flow_tasks": [
+      {
+        "name": "Load Sales Facts",
+        "description": "Extract sales transactions, lookup dimension keys, and load to fact table",
+        "sources": [
+          {
+            "name": "Sales Source",
+            "component_type": "OLEDBSource",
+            "description": "Extract sales transactions from OLTP",
+            "connection_manager": "Package.ConnectionManagers[SalesDB]",
+            "sql_command": "SELECT\n    s.SaleID,\n    s.CustomerID,\n    s.ProductID,\n    s.SaleDate,\n    s.Quantity,\n    s.UnitPrice,\n    s.DiscountPercent,\n    s.SalesRepID,\n    s.StoreID\nFROM sales.Transactions s\nWHERE s.SaleDate BETWEEN ? AND ?\n  AND s.IsVoided = 0",
+            "table_name": null,
+            "columns": [
+              {
+                "name": "SaleID",
+                "ssis_type": "i8",
+                "sql_type": "BIGINT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "CustomerID",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "ProductID",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "SaleDate",
+                "ssis_type": "dbTimeStamp",
+                "sql_type": "DATETIME",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "Quantity",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "UnitPrice",
+                "ssis_type": "numeric",
+                "sql_type": "NUMERIC(18,2)",
+                "length": null,
+                "precision": 18,
+                "scale": 2,
+                "nullable": true
+              },
+              {
+                "name": "DiscountPercent",
+                "ssis_type": "numeric",
+                "sql_type": "NUMERIC(5,2)",
+                "length": null,
+                "precision": 5,
+                "scale": 2,
+                "nullable": true
+              },
+              {
+                "name": "SalesRepID",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              },
+              {
+                "name": "StoreID",
+                "ssis_type": "i4",
+                "sql_type": "INT",
+                "length": null,
+                "precision": null,
+                "scale": null,
+                "nullable": true
+              }
+            ]
+          }
+        ],
+        "destinations": [
+          {
+            "name": "Fact Destination",
+            "component_type": "OLEDBDestination",
+            "description": "Load to fact.Sales table",
+            "connection_manager": "Package.ConnectionManagers[DW]",
+            "table_name": "[fact].[Sales]",
+            "columns": []
+          }
+        ],
+        "lookups": [
+          {
+            "name": "Lookup Customer",
+            "description": "Get CustomerKey from dimension table",
+            "connection_manager": "Package.ConnectionManagers[DW]",
+            "sql_command": "SELECT CustomerKey, CustomerID FROM dim.Customer WHERE IsCurrent = 1",
+            "cache_mode": "Full",
+            "no_match_behavior": "IgnoreFailure",
+            "input_columns": [],
+            "join_columns": [],
+            "output_columns": [
+              "CustomerKey"
+            ]
+          },
+          {
+            "name": "Lookup Product",
+            "description": "Get ProductKey from dimension table",
+            "connection_manager": "Package.ConnectionManagers[DW]",
+            "sql_command": "SELECT ProductKey, ProductID, CategoryID FROM dim.Product WHERE IsActive = 1",
+            "cache_mode": "Full",
+            "no_match_behavior": "IgnoreFailure",
+            "input_columns": [],
+            "join_columns": [],
+            "output_columns": [
+              "ProductKey",
+              "CategoryID"
+            ]
+          },
+          {
+            "name": "Lookup Date",
+            "description": "Get DateKey from date dimension",
+            "connection_manager": "Package.ConnectionManagers[DW]",
+            "sql_command": "SELECT DateKey, FullDate FROM dim.Date",
+            "cache_mode": "Full",
+            "no_match_behavior": "FailComponent",
+            "input_columns": [],
+            "join_columns": [],
+            "output_columns": [
+              "DateKey"
+            ]
+          }
+        ],
+        "derived_columns": [
+          {
+            "name": "GrossAmount",
+            "expression": "[Quantity] * [UnitPrice]",
+            "friendly_expression": "Quantity * UnitPrice",
+            "output_type": "numeric",
+            "output_length": null
+          },
+          {
+            "name": "DiscountAmount",
+            "expression": "([Quantity] * [UnitPrice]) * ([DiscountPercent] / 100)",
+            "friendly_expression": "(Quantity * UnitPrice) * (DiscountPercent / 100)",
+            "output_type": "numeric",
+            "output_length": null
+          },
+          {
+            "name": "NetAmount",
+            "expression": "([Quantity] * [UnitPrice]) - (([Quantity] * [UnitPrice]) * ([DiscountPercent] / 100))",
+            "friendly_expression": "(Quantity * UnitPrice) - DiscountAmount",
+            "output_type": "numeric",
+            "output_length": null
+          }
+        ]
+      }
+    ],
+    "script_tasks": [],
+    "send_mail_tasks": [],
+    "precedence_constraints": [
+      {
+        "from_task": "Pre-ETL Validation",
+        "to_task": "Load Sales Facts",
+        "constraint_type": "Success"
+      },
+      {
+        "from_task": "Load Sales Facts",
+        "to_task": "Update Aggregates",
+        "constraint_type": "Success"
+      }
+    ],
+    "parsing_warnings": [],
+    "parsing_errors": []
+  }
+]

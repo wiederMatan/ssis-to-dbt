@@ -1,0 +1,84 @@
+version: 2
+
+sources:
+  - name: datawarehouse
+    description: "Data Warehouse - Dimension and fact tables"
+    database: DataWarehouse
+    meta:
+      owner: "ETL Team"
+      ssis_connection: "TargetDW"
+      server: "DWSRV"
+
+    tables:
+      # Dimension tables
+      - name: dim_customer
+        identifier: Customer
+        schema: dim
+        description: "Customer dimension table"
+        columns:
+          - name: CustomerKey
+            description: "Surrogate key"
+            data_type: INT
+            tests:
+              - not_null
+              - unique
+          - name: CustomerID
+            description: "Natural key from source"
+            data_type: INT
+          - name: IsCurrent
+            description: "SCD Type 2 current flag"
+            data_type: BIT
+
+      - name: dim_product
+        identifier: Product
+        schema: dim
+        description: "Product dimension table"
+        columns:
+          - name: ProductKey
+            description: "Surrogate key"
+            data_type: INT
+            tests:
+              - not_null
+              - unique
+          - name: ProductID
+            description: "Natural key from source"
+            data_type: INT
+          - name: SKU
+            description: "Stock keeping unit"
+            data_type: NVARCHAR(50)
+          - name: CategoryID
+            description: "Product category"
+            data_type: INT
+          - name: IsActive
+            description: "Active product flag"
+            data_type: BIT
+
+      - name: dim_date
+        identifier: Date
+        schema: dim
+        description: "Date dimension table"
+        columns:
+          - name: DateKey
+            description: "Surrogate key (YYYYMMDD format)"
+            data_type: INT
+            tests:
+              - not_null
+              - unique
+          - name: FullDate
+            description: "Full date value"
+            data_type: DATE
+
+      - name: dim_warehouse
+        identifier: Warehouse
+        schema: dim
+        description: "Warehouse dimension table"
+        columns:
+          - name: WarehouseKey
+            description: "Surrogate key"
+            data_type: INT
+            tests:
+              - not_null
+              - unique
+          - name: WarehouseCode
+            description: "Warehouse location code"
+            data_type: NVARCHAR(10)

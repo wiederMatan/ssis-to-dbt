@@ -1,0 +1,33 @@
+{
+  "tables": [
+    {
+      "schema_name": "fact",
+      "table_name": "InventorySnapshot",
+      "full_name": "fact.InventorySnapshot",
+      "source_system": null,
+      "referenced_in": [
+        "Load Inventory Updates"
+      ]
+    },
+    {
+      "schema_name": "stg",
+      "table_name": "Customer",
+      "full_name": "stg.Customer",
+      "source_system": null,
+      "referenced_in": [
+        "Load Customer Data"
+      ]
+    },
+    {
+      "schema_name": "fact",
+      "table_name": "Sales",
+      "full_name": "fact.Sales",
+      "source_system": null,
+      "referenced_in": [
+        "Load Sales Facts"
+      ]
+    }
+  ],
+  "columns": [],
+  "source_systems": []
+}

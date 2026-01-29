@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 <DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
                 xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask"
+                xmlns:SendMailTask="www.microsoft.com/sqlserver/dts/tasks/sendmailtask"
                 DTS:refId="Package"
                 DTS:ObjectName="InventorySync"
                 DTS:Description="Inventory synchronization with external API - includes Script Task for manual review"
