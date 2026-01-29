@@ -7,9 +7,11 @@ This script orchestrates the full migration pipeline:
 2. Run dbt run to execute models
 3. Run dbt test to validate data quality
 4. Run MCP-based validation against legacy tables
+5. Auto-remediation with retry loop (if enabled)
 
 Usage:
     python run_migration.py [--skip-dbt] [--skip-validation] [-v]
+    python run_migration.py --auto-fix [--max-attempts 3] [--tolerance 1.0]
 """
 
 import argparse
@@ -26,6 +28,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from src.validation.models import DbtRunResult, ValidationReport
 from src.validation.validator import MigrationValidator
+from src.validation.remediation_agent import RemediationAgent
 
 console = Console()
 
@@ -249,6 +252,23 @@ def main():
         action="store_true",
         help="Verbose output",
     )
+    parser.add_argument(
+        "--auto-fix",
+        action="store_true",
+        help="Enable auto-remediation agent to fix validation failures",
+    )
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=3,
+        help="Maximum remediation attempts before giving up (default: 3)",
+    )
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=1.0,
+        help="Acceptable variance percentage for validation (default: 1.0)",
+    )
 
     args = parser.parse_args()
 
@@ -276,6 +296,33 @@ def main():
     validator.report.dbt_run = run_result
     validator.report.dbt_test = test_result
 
+    # Check if auto-fix is enabled and there are failures
+    remediation_result = None
+    if args.auto_fix and validator.report.models_failed > 0:
+        console.print()
+        console.print(Panel(
+            "[bold yellow]Validation failures detected![/bold yellow]\n"
+            f"Starting auto-remediation agent (max {args.max_attempts} attempts)...",
+            expand=False,
+            border_style="yellow"
+        ))
+
+        # Create and run remediation agent
+        agent = RemediationAgent(
+            dbt_project_path=DBT_PROJECT_PATH,
+            max_attempts=args.max_attempts,
+            variance_tolerance=args.tolerance,
+            verbose=args.verbose,
+        )
+
+        remediation_result = agent.run_remediation_loop(
+            validator=validator,
+            run_dbt_func=lambda skip: run_dbt_pipeline(skip=skip),
+        )
+
+        # Export remediation report
+        agent.export_remediation_report(OUTPUT_PATH / "remediation_report.md")
+
     # Export results
     console.print()
     console.print(Panel("[bold]Exporting Results[/bold]", expand=False))
@@ -289,24 +336,71 @@ def main():
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
 
-    console.print()
-    console.print(Panel.fit(
-        f"[bold green]Phase 3 Complete![/bold green]\n\n"
-        f"Duration: {duration:.1f}s\n"
-        f"Models Validated: {validator.report.total_models}\n"
-        f"Passed: {validator.report.models_passed}\n"
-        f"Failed: {validator.report.models_failed}\n"
-        f"Warnings: {validator.report.models_warning}\n\n"
-        f"[dim]Output files:[/dim]\n"
-        f"  • output/validation_log.json\n"
-        f"  • output/validation_report.md",
-        border_style="green",
-    ))
+    # Determine final status
+    if remediation_result:
+        if remediation_result.all_issues_resolved:
+            final_status = "[bold green]All Issues Resolved![/bold green]"
+            border_style = "green"
+        else:
+            final_status = "[bold red]Remediation Incomplete[/bold red]"
+            border_style = "red"
 
-    # Return appropriate exit code
-    if validator.report.models_failed > 0:
-        sys.exit(1)
-    sys.exit(0)
+        output_files = (
+            f"[dim]Output files:[/dim]\n"
+            f"  • output/validation_log.json\n"
+            f"  • output/validation_report.md\n"
+            f"  • output/remediation_report.md"
+        )
+
+        summary_text = (
+            f"{final_status}\n\n"
+            f"Duration: {duration:.1f}s\n"
+            f"Remediation Attempts: {remediation_result.total_attempts}/{args.max_attempts}\n"
+            f"Initial Failures: {remediation_result.initial_failures}\n"
+            f"Final Failures: {remediation_result.final_failures}\n"
+        )
+
+        if remediation_result.manual_review_required:
+            summary_text += f"\n[yellow]Manual Review Required:[/yellow]\n"
+            for model in remediation_result.manual_review_required:
+                reason = remediation_result.manual_review_reasons.get(model, "Unknown")
+                summary_text += f"  • {model}: {reason[:50]}...\n"
+
+        summary_text += f"\n{output_files}"
+
+        console.print()
+        console.print(Panel.fit(summary_text, border_style=border_style))
+
+        # Exit with appropriate code
+        if remediation_result.all_issues_resolved:
+            sys.exit(0)
+        else:
+            sys.exit(1)
+    else:
+        # No remediation - standard output
+        console.print()
+        console.print(Panel.fit(
+            f"[bold green]Phase 3 Complete![/bold green]\n\n"
+            f"Duration: {duration:.1f}s\n"
+            f"Models Validated: {validator.report.total_models}\n"
+            f"Passed: {validator.report.models_passed}\n"
+            f"Failed: {validator.report.models_failed}\n"
+            f"Warnings: {validator.report.models_warning}\n\n"
+            f"[dim]Output files:[/dim]\n"
+            f"  • output/validation_log.json\n"
+            f"  • output/validation_report.md",
+            border_style="green" if validator.report.models_failed == 0 else "yellow",
+        ))
+
+        # Return appropriate exit code
+        if validator.report.models_failed > 0:
+            if args.auto_fix:
+                # Already handled above
+                pass
+            else:
+                console.print("\n[yellow]Tip: Run with --auto-fix to attempt automatic remediation[/yellow]")
+            sys.exit(1)
+        sys.exit(0)
 
 
 if __name__ == "__main__":

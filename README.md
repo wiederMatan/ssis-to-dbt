@@ -226,7 +226,9 @@ ssis-to-dbt/
 │   │   └── type_mappings.py    # SSIS → SQL type conversions
 │   └── validation/
 │       ├── validator.py        # Post-migration validator
-│       └── models.py           # Validation result models
+│       ├── models.py           # Validation result models
+│       ├── remediation_agent.py # Self-healing agent
+│       └── remediation_models.py # Remediation data models
 │
 ├── dbt_project/
 │   ├── dbt_project.yml         # dbt configuration
@@ -319,6 +321,12 @@ python3 run_migration.py --skip-validation
 
 # Verbose output
 python3 run_migration.py -v
+
+# Enable auto-remediation (retries up to 3 times)
+python3 run_migration.py --auto-fix
+
+# Custom max attempts and tolerance
+python3 run_migration.py --auto-fix --max-attempts 5 --tolerance 0.5
 ```
 
 ### 3. Run dbt Models
@@ -385,6 +393,117 @@ The migration validator performs three types of checks:
 | Row Count        | Compare legacy table vs dbt model row counts   | Variance < 0.1%      |
 | Primary Key      | Check for NULL and duplicate primary keys      | 0 nulls, 0 duplicates|
 | Numeric Checksum | Compare SUM/AVG of numeric columns             | Variance < 0.01%     |
+
+---
+
+## Auto-Remediation Agent
+
+The system includes a self-healing agent that automatically diagnoses and fixes validation failures.
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                          Auto-Remediation Flow                                  │
+├─────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                 │
+│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐  │
+│   │  Validate   │────▶│  Diagnose   │────▶│   Plan &    │────▶│  Re-run     │  │
+│   │  dbt vs DWH │     │  Root Cause │     │   Apply Fix │     │  Validation │  │
+│   └─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘  │
+│         │                                                            │          │
+│         │                        ┌───────────────────────────────────┘          │
+│         │                        │                                              │
+│         │                        ▼                                              │
+│         │              ┌──────────────────┐                                     │
+│         │              │  Still failing?  │                                     │
+│         │              └────────┬─────────┘                                     │
+│         │                       │                                               │
+│         │         Yes, retry    │    No, all passed                            │
+│         │         (max 3x)      │                                               │
+│         │        ┌──────────────┴──────────────┐                               │
+│         │        ▼                             ▼                                │
+│         │  ┌───────────┐               ┌─────────────┐                         │
+│         │  │  Retry or │               │   Success!  │                         │
+│         │  │  Give Up  │               │             │                         │
+│         │  └───────────┘               └─────────────┘                         │
+│         │        │                                                              │
+│         │        ▼ (after 3 failures)                                          │
+│         │  ┌─────────────────────────────┐                                     │
+│         │  │  Stop & Report Issues       │                                     │
+│         │  │  - List failing models      │                                     │
+│         │  │  - Explain root causes      │                                     │
+│         │  │  - Recommend manual fixes   │                                     │
+│         │  └─────────────────────────────┘                                     │
+│                                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Discrepancy Types Detected
+
+| Type                  | Detection                          | Auto-Fix Strategy              |
+|-----------------------|------------------------------------|--------------------------------|
+| Row Count (Over)      | dbt > legacy rows                  | Add DISTINCT, review filters   |
+| Row Count (Under)     | dbt < legacy rows                  | Fix JOINs, relax WHERE clause  |
+| PK Nulls              | NULL values in primary key         | Add COALESCE or filter NULLs   |
+| PK Duplicates         | Duplicate primary keys             | Add DISTINCT, fix JOIN logic   |
+| Checksum Variance     | SUM/AVG differs from legacy        | Fix type casting, NULL handling|
+
+### Usage
+
+```bash
+# Enable auto-remediation with default settings (3 attempts, 1% tolerance)
+python3 run_migration.py --auto-fix
+
+# Customize retry behavior
+python3 run_migration.py --auto-fix --max-attempts 5 --tolerance 0.5
+
+# Verbose mode for detailed diagnosis output
+python3 run_migration.py --auto-fix -v
+```
+
+### Output
+
+When remediation completes (success or failure), the system generates:
+
+- `output/remediation_report.md` - Detailed remediation history
+- Console output with:
+  - Discrepancy analysis
+  - Root cause diagnosis
+  - Applied fixes
+  - Final status and recommendations
+
+### Example Output (Failure After 3 Attempts)
+
+```
+╭─────────────────────────────────────────────────────────────────╮
+│ Remediation Incomplete                                          │
+│                                                                 │
+│ After 3 attempts, 2 model(s) still failing.                    │
+│                                                                 │
+│ Remaining Failures:                                             │
+│   • fct_sales                                                   │
+│   • agg_daily_sales                                             │
+╰─────────────────────────────────────────────────────────────────╯
+
+╭─────────────────────────────────────────────────────────────────╮
+│ Manual Review Required                                          │
+│                                                                 │
+│ The following models need manual intervention:                  │
+│                                                                 │
+│ • fct_sales: Row count 5.2% higher than legacy - likely        │
+│   duplicate joins or missing business filter                    │
+│                                                                 │
+│ • agg_daily_sales: Checksum variance 3.1% on total_amount -    │
+│   check decimal precision in type casting                       │
+╰─────────────────────────────────────────────────────────────────╯
+
+Recommended Next Steps:
+1. Review the validation_report.md for detailed discrepancy information
+2. Compare legacy SQL queries with generated dbt models
+3. Check source data for any recent changes or anomalies
+4. Manually adjust dbt models based on the diagnosis above
+```
 
 ---
 
