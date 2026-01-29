@@ -1,0 +1,324 @@
+<?xml version="1.0"?>
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+                xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask"
+                DTS:refId="Package"
+                DTS:ObjectName="SalesFactETL"
+                DTS:Description="Sales fact table ETL with dimension lookups"
+                DTS:CreatorComputerName="DEVSERVER"
+                DTS:CreatorName="ETLDeveloper"
+                DTS:CreationDate="2024-01-20T14:00:00"
+                DTS:DTSID="{PKG-002-SALES-FACT}">
+
+  <!-- Connection Managers -->
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[SalesDB]"
+                           DTS:ObjectName="SalesDB"
+                           DTS:DTSID="{C3D4E5F6-A7B8-9012-CDEF-345678901234}"
+                           DTS:Description="Connection to transactional Sales database">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=SALESSRV;Initial Catalog=Sales_OLTP;Provider=SQLNCLI11.1;Integrated Security=SSPI;"/>
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[DW]"
+                           DTS:ObjectName="DW"
+                           DTS:DTSID="{D4E5F6A7-B8C9-0123-DEFA-456789012345}"
+                           DTS:Description="Connection to Data Warehouse">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=DWSRV;Initial Catalog=DataWarehouse;Provider=SQLNCLI11.1;Integrated Security=SSPI;"/>
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+  </DTS:ConnectionManagers>
+
+  <!-- Variables -->
+  <DTS:Variables>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="StartDate">
+      <DTS:VariableValue DTS:DataType="7">2024-01-01T00:00:00</DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="EndDate">
+      <DTS:VariableValue DTS:DataType="7">2024-01-31T23:59:59</DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="RowCount">
+      <DTS:VariableValue DTS:DataType="3">0</DTS:VariableValue>
+    </DTS:Variable>
+  </DTS:Variables>
+
+  <!-- Executables (Tasks) -->
+  <DTS:Executables>
+    <!-- Execute SQL Task: Pre-ETL Validation -->
+    <DTS:Executable DTS:refId="Package\Pre-ETL Validation"
+                    DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+                    DTS:ObjectName="Pre-ETL Validation"
+                    DTS:Description="Verify source data availability and dimension tables are populated">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData SQLTask:Connection="{D4E5F6A7-B8C9-0123-DEFA-456789012345}"
+                             SQLTask:SqlStatementSource="-- Verify dimension tables have data
+DECLARE @CustomerCount INT, @ProductCount INT, @DateCount INT;
+SELECT @CustomerCount = COUNT(*) FROM dim.Customer WHERE IsCurrent = 1;
+SELECT @ProductCount = COUNT(*) FROM dim.Product WHERE IsActive = 1;
+SELECT @DateCount = COUNT(*) FROM dim.Date;
+
+IF @CustomerCount = 0 OR @ProductCount = 0 OR @DateCount = 0
+    RAISERROR('Dimension tables are empty. Cannot proceed with fact load.', 16, 1);"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Data Flow Task: Load Sales Facts -->
+    <DTS:Executable DTS:refId="Package\Load Sales Facts"
+                    DTS:ExecutableType="Microsoft.Pipeline"
+                    DTS:ObjectName="Load Sales Facts"
+                    DTS:Description="Extract sales transactions, lookup dimension keys, and load to fact table">
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+            <!-- OLE DB Source: Sales Transactions -->
+            <component refId="Package\Load Sales Facts\Sales Source"
+                       componentClassID="Microsoft.OLEDBSource"
+                       name="Sales Source"
+                       description="Extract sales transactions from OLTP">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT
+    s.SaleID,
+    s.CustomerID,
+    s.ProductID,
+    s.SaleDate,
+    s.Quantity,
+    s.UnitPrice,
+    s.DiscountPercent,
+    s.SalesRepID,
+    s.StoreID
+FROM sales.Transactions s
+WHERE s.SaleDate BETWEEN ? AND ?
+  AND s.IsVoided = 0</property>
+                <property name="AccessMode" dataType="System.Int32">2</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Sales Facts\Sales Source.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[SalesDB]"
+                           name="OleDbConnection"/>
+              </connections>
+              <outputs>
+                <output refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output]" name="OLE DB Source Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[SaleID]"
+                                  dataType="i8" name="SaleID"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[CustomerID]"
+                                  dataType="i4" name="CustomerID"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[ProductID]"
+                                  dataType="i4" name="ProductID"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[SaleDate]"
+                                  dataType="dbTimeStamp" name="SaleDate"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[Quantity]"
+                                  dataType="i4" name="Quantity"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[UnitPrice]"
+                                  dataType="numeric" precision="18" scale="2" name="UnitPrice"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[DiscountPercent]"
+                                  dataType="numeric" precision="5" scale="2" name="DiscountPercent"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[SalesRepID]"
+                                  dataType="i4" name="SalesRepID"/>
+                    <outputColumn refId="Package\Load Sales Facts\Sales Source.Outputs[OLE DB Source Output].Columns[StoreID]"
+                                  dataType="i4" name="StoreID"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup: Customer Dimension Key -->
+            <component refId="Package\Load Sales Facts\Lookup Customer"
+                       componentClassID="Microsoft.Lookup"
+                       name="Lookup Customer"
+                       description="Get CustomerKey from dimension table">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT CustomerKey, CustomerID FROM dim.Customer WHERE IsCurrent = 1</property>
+                <property name="CacheType" dataType="System.Int32">0</property>
+                <property name="NoMatchBehavior" dataType="System.Int32">1</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Sales Facts\Lookup Customer.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[DW]"
+                           name="OleDbConnection"/>
+              </connections>
+              <inputs>
+                <input refId="Package\Load Sales Facts\Lookup Customer.Inputs[Lookup Input]" name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\Load Sales Facts\Lookup Customer.Inputs[Lookup Input].Columns[CustomerID]"
+                                 cachedName="CustomerID" lineageId="10"
+                                 usageType="readOnly"/>
+                  </inputColumns>
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Sales Facts\Lookup Customer.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Sales Facts\Lookup Customer.Outputs[Lookup Match Output].Columns[CustomerKey]"
+                                  dataType="i4" name="CustomerKey"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup: Product Dimension Key -->
+            <component refId="Package\Load Sales Facts\Lookup Product"
+                       componentClassID="Microsoft.Lookup"
+                       name="Lookup Product"
+                       description="Get ProductKey from dimension table">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT ProductKey, ProductID, CategoryID FROM dim.Product WHERE IsActive = 1</property>
+                <property name="CacheType" dataType="System.Int32">0</property>
+                <property name="NoMatchBehavior" dataType="System.Int32">1</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Sales Facts\Lookup Product.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[DW]"
+                           name="OleDbConnection"/>
+              </connections>
+              <inputs>
+                <input refId="Package\Load Sales Facts\Lookup Product.Inputs[Lookup Input]" name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\Load Sales Facts\Lookup Product.Inputs[Lookup Input].Columns[ProductID]"
+                                 cachedName="ProductID" lineageId="11"
+                                 usageType="readOnly"/>
+                  </inputColumns>
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Sales Facts\Lookup Product.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Sales Facts\Lookup Product.Outputs[Lookup Match Output].Columns[ProductKey]"
+                                  dataType="i4" name="ProductKey"/>
+                    <outputColumn refId="Package\Load Sales Facts\Lookup Product.Outputs[Lookup Match Output].Columns[CategoryID]"
+                                  dataType="i4" name="CategoryID"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup: Date Dimension Key -->
+            <component refId="Package\Load Sales Facts\Lookup Date"
+                       componentClassID="Microsoft.Lookup"
+                       name="Lookup Date"
+                       description="Get DateKey from date dimension">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT DateKey, FullDate FROM dim.Date</property>
+                <property name="CacheType" dataType="System.Int32">0</property>
+                <property name="NoMatchBehavior" dataType="System.Int32">0</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Sales Facts\Lookup Date.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[DW]"
+                           name="OleDbConnection"/>
+              </connections>
+              <inputs>
+                <input refId="Package\Load Sales Facts\Lookup Date.Inputs[Lookup Input]" name="Lookup Input">
+                  <inputColumns>
+                    <inputColumn refId="Package\Load Sales Facts\Lookup Date.Inputs[Lookup Input].Columns[SaleDate]"
+                                 cachedName="SaleDate" lineageId="12"
+                                 usageType="readOnly"/>
+                  </inputColumns>
+                </input>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Sales Facts\Lookup Date.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Sales Facts\Lookup Date.Outputs[Lookup Match Output].Columns[DateKey]"
+                                  dataType="i4" name="DateKey"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Derived Column: Calculate Amounts -->
+            <component refId="Package\Load Sales Facts\Calculate Amounts"
+                       componentClassID="Microsoft.DerivedColumn"
+                       name="Calculate Amounts"
+                       description="Calculate TotalAmount, DiscountAmount, and NetAmount">
+              <inputs>
+                <input refId="Package\Load Sales Facts\Calculate Amounts.Inputs[Derived Column Input]" name="Derived Column Input"/>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Sales Facts\Calculate Amounts.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Sales Facts\Calculate Amounts.Outputs[Derived Column Output].Columns[GrossAmount]"
+                                  dataType="numeric" precision="18" scale="2" name="GrossAmount">
+                      <properties>
+                        <property name="Expression">[Quantity] * [UnitPrice]</property>
+                        <property name="FriendlyExpression">Quantity * UnitPrice</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\Load Sales Facts\Calculate Amounts.Outputs[Derived Column Output].Columns[DiscountAmount]"
+                                  dataType="numeric" precision="18" scale="2" name="DiscountAmount">
+                      <properties>
+                        <property name="Expression">([Quantity] * [UnitPrice]) * ([DiscountPercent] / 100)</property>
+                        <property name="FriendlyExpression">(Quantity * UnitPrice) * (DiscountPercent / 100)</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\Load Sales Facts\Calculate Amounts.Outputs[Derived Column Output].Columns[NetAmount]"
+                                  dataType="numeric" precision="18" scale="2" name="NetAmount">
+                      <properties>
+                        <property name="Expression">([Quantity] * [UnitPrice]) - (([Quantity] * [UnitPrice]) * ([DiscountPercent] / 100))</property>
+                        <property name="FriendlyExpression">(Quantity * UnitPrice) - DiscountAmount</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- OLE DB Destination: Fact Sales -->
+            <component refId="Package\Load Sales Facts\Fact Destination"
+                       componentClassID="Microsoft.OLEDBDestination"
+                       name="Fact Destination"
+                       description="Load to fact.Sales table">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[fact].[Sales]</property>
+                <property name="AccessMode" dataType="System.Int32">3</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Sales Facts\Fact Destination.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[DW]"
+                           name="OleDbConnection"/>
+              </connections>
+            </component>
+          </components>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Execute SQL Task: Update Aggregates -->
+    <DTS:Executable DTS:refId="Package\Update Aggregates"
+                    DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+                    DTS:ObjectName="Update Aggregates"
+                    DTS:Description="Refresh aggregate tables after fact load">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData SQLTask:Connection="{D4E5F6A7-B8C9-0123-DEFA-456789012345}"
+                             SQLTask:SqlStatementSource="-- Refresh daily sales aggregates
+DELETE FROM agg.DailySales WHERE SaleDate BETWEEN @StartDate AND @EndDate;
+
+INSERT INTO agg.DailySales (DateKey, ProductKey, CustomerKey, TotalQuantity, TotalNetAmount, TransactionCount)
+SELECT
+    DateKey,
+    ProductKey,
+    CustomerKey,
+    SUM(Quantity) AS TotalQuantity,
+    SUM(NetAmount) AS TotalNetAmount,
+    COUNT(*) AS TransactionCount
+FROM fact.Sales
+WHERE DateKey IN (SELECT DateKey FROM dim.Date WHERE FullDate BETWEEN @StartDate AND @EndDate)
+GROUP BY DateKey, ProductKey, CustomerKey;"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+
+  <!-- Precedence Constraints -->
+  <DTS:PrecedenceConstraints>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Validation to Load]"
+                              DTS:From="Package\Pre-ETL Validation"
+                              DTS:To="Package\Load Sales Facts"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Load to Aggregates]"
+                              DTS:From="Package\Load Sales Facts"
+                              DTS:To="Package\Update Aggregates"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+  </DTS:PrecedenceConstraints>
+</DTS:Executable>

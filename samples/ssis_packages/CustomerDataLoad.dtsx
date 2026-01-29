@@ -1,0 +1,199 @@
+<?xml version="1.0"?>
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+                xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask"
+                DTS:refId="Package"
+                DTS:ObjectName="CustomerDataLoad"
+                DTS:Description="Load customer data from CRM to DW dimension table"
+                DTS:CreatorComputerName="DEVSERVER"
+                DTS:CreatorName="ETLDeveloper"
+                DTS:CreationDate="2024-01-15T10:30:00"
+                DTS:DTSID="{PKG-001-CUST-LOAD}">
+
+  <!-- Connection Managers -->
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[SourceDB]"
+                           DTS:ObjectName="SourceDB"
+                           DTS:DTSID="{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+                           DTS:Description="Connection to CRM source database">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=CRMSRV;Initial Catalog=CRM_Production;Provider=SQLNCLI11.1;Integrated Security=SSPI;"/>
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[TargetDW]"
+                           DTS:ObjectName="TargetDW"
+                           DTS:DTSID="{B2C3D4E5-F6A7-8901-BCDE-F23456789012}"
+                           DTS:Description="Connection to Data Warehouse">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=DWSRV;Initial Catalog=DataWarehouse;Provider=SQLNCLI11.1;Integrated Security=SSPI;"/>
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+  </DTS:ConnectionManagers>
+
+  <!-- Variables -->
+  <DTS:Variables>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="LoadDate">
+      <DTS:VariableValue DTS:DataType="7">2024-01-15T00:00:00</DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="BatchSize">
+      <DTS:VariableValue DTS:DataType="3">1000</DTS:VariableValue>
+    </DTS:Variable>
+  </DTS:Variables>
+
+  <!-- Executables (Tasks) -->
+  <DTS:Executables>
+    <!-- Execute SQL Task: Truncate Staging -->
+    <DTS:Executable DTS:refId="Package\Truncate Staging"
+                    DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+                    DTS:ObjectName="Truncate Staging"
+                    DTS:Description="Clear staging table before load">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData SQLTask:Connection="{B2C3D4E5-F6A7-8901-BCDE-F23456789012}"
+                             SQLTask:SqlStatementSource="TRUNCATE TABLE stg.Customer;"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Data Flow Task: Load Customer Data -->
+    <DTS:Executable DTS:refId="Package\Load Customer Data"
+                    DTS:ExecutableType="Microsoft.Pipeline"
+                    DTS:ObjectName="Load Customer Data"
+                    DTS:Description="Extract customers from CRM and load to staging">
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+            <!-- OLE DB Source -->
+            <component refId="Package\Load Customer Data\OLE DB Source"
+                       componentClassID="Microsoft.OLEDBSource"
+                       name="OLE DB Source"
+                       description="Extract customer records from CRM">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT
+    CustomerID,
+    FirstName,
+    LastName,
+    Email,
+    Phone,
+    CreatedDate,
+    ModifiedDate
+FROM crm.Customers
+WHERE ModifiedDate >= ?</property>
+                <property name="AccessMode" dataType="System.Int32">2</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Customer Data\OLE DB Source.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[SourceDB]"
+                           name="OleDbConnection"/>
+              </connections>
+              <outputs>
+                <output refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output]" name="OLE DB Source Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[CustomerID]"
+                                  dataType="i4" name="CustomerID"/>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[FirstName]"
+                                  dataType="wstr" length="50" name="FirstName"/>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[LastName]"
+                                  dataType="wstr" length="50" name="LastName"/>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[Email]"
+                                  dataType="wstr" length="255" name="Email"/>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[Phone]"
+                                  dataType="wstr" length="20" name="Phone"/>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[CreatedDate]"
+                                  dataType="dbTimeStamp" name="CreatedDate"/>
+                    <outputColumn refId="Package\Load Customer Data\OLE DB Source.Outputs[OLE DB Source Output].Columns[ModifiedDate]"
+                                  dataType="dbTimeStamp" name="ModifiedDate"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Derived Column: Create FullName -->
+            <component refId="Package\Load Customer Data\Derived Column"
+                       componentClassID="Microsoft.DerivedColumn"
+                       name="Derived Column"
+                       description="Create FullName from FirstName and LastName">
+              <inputs>
+                <input refId="Package\Load Customer Data\Derived Column.Inputs[Derived Column Input]" name="Derived Column Input"/>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Customer Data\Derived Column.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Customer Data\Derived Column.Outputs[Derived Column Output].Columns[FullName]"
+                                  dataType="wstr" length="101" name="FullName">
+                      <properties>
+                        <property name="Expression">[FirstName] + " " + [LastName]</property>
+                        <property name="FriendlyExpression">FirstName + " " + LastName</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\Load Customer Data\Derived Column.Outputs[Derived Column Output].Columns[EmailDomain]"
+                                  dataType="wstr" length="100" name="EmailDomain">
+                      <properties>
+                        <property name="Expression">SUBSTRING([Email], FINDSTRING([Email], "@", 1) + 1, LEN([Email]))</property>
+                        <property name="FriendlyExpression">Extract domain from Email</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- OLE DB Destination -->
+            <component refId="Package\Load Customer Data\OLE DB Destination"
+                       componentClassID="Microsoft.OLEDBDestination"
+                       name="OLE DB Destination"
+                       description="Load to staging table">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[stg].[Customer]</property>
+                <property name="AccessMode" dataType="System.Int32">3</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Customer Data\OLE DB Destination.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[TargetDW]"
+                           name="OleDbConnection"/>
+              </connections>
+            </component>
+          </components>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Execute SQL Task: Merge to Dimension -->
+    <DTS:Executable DTS:refId="Package\Merge to Dimension"
+                    DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+                    DTS:ObjectName="Merge to Dimension"
+                    DTS:Description="Merge staged data into dimension table using SCD Type 2 logic">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData SQLTask:Connection="{B2C3D4E5-F6A7-8901-BCDE-F23456789012}"
+                             SQLTask:SqlStatementSource="-- Merge customer data from staging to dimension
+MERGE dim.Customer AS target
+USING stg.Customer AS source
+ON target.CustomerID = source.CustomerID
+WHEN MATCHED AND target.CustomerHash != HASHBYTES('SHA2_256', CONCAT(source.FirstName, source.LastName, source.Email))
+THEN UPDATE SET
+    FirstName = source.FirstName,
+    LastName = source.LastName,
+    FullName = source.FullName,
+    Email = source.Email,
+    Phone = source.Phone,
+    EmailDomain = source.EmailDomain,
+    ModifiedDate = GETDATE(),
+    IsCurrent = 1
+WHEN NOT MATCHED BY TARGET
+THEN INSERT (CustomerID, FirstName, LastName, FullName, Email, Phone, EmailDomain, CreatedDate, ModifiedDate, IsCurrent)
+VALUES (source.CustomerID, source.FirstName, source.LastName, source.FullName, source.Email, source.Phone, source.EmailDomain, source.CreatedDate, GETDATE(), 1);"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+
+  <!-- Precedence Constraints (Task Ordering) -->
+  <DTS:PrecedenceConstraints>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint]"
+                              DTS:From="Package\Truncate Staging"
+                              DTS:To="Package\Load Customer Data"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Constraint 1]"
+                              DTS:From="Package\Load Customer Data"
+                              DTS:To="Package\Merge to Dimension"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+  </DTS:PrecedenceConstraints>
+</DTS:Executable>
