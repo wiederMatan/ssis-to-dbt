@@ -1,0 +1,218 @@
+{
+  "generated_at": "2026-01-29 17:28:23.006434",
+  "dbt_deps": null,
+  "dbt_run": null,
+  "dbt_test": null,
+  "model_validations": [
+    {
+      "model_name": "dim_customer",
+      "ssis_package": "CustomerDataLoad.dtsx",
+      "ssis_task": "Merge to Dimension",
+      "legacy_table": "dim.Customer",
+      "row_count": {
+        "legacy_table": "dim.Customer",
+        "legacy_count": 15000,
+        "dbt_model": "dim_customer",
+        "dbt_count": 15000,
+        "difference": 0,
+        "difference_percent": 0.0,
+        "status": "passed",
+        "message": "Row counts match exactly"
+      },
+      "primary_key": {
+        "model": "dim_customer",
+        "pk_column": "customer_key",
+        "null_count": 0,
+        "duplicate_count": 0,
+        "status": "passed",
+        "message": "Primary key integrity verified"
+      },
+      "checksums": [],
+      "overall_status": "passed",
+      "errors": [],
+      "warnings": [],
+      "started_at": "2026-01-29 17:28:23.006648",
+      "completed_at": "2026-01-29 17:28:23.006705",
+      "duration_seconds": 5.7e-05
+    },
+    {
+      "model_name": "fct_sales",
+      "ssis_package": "SalesFactETL.dtsx",
+      "ssis_task": "Load Sales Facts",
+      "legacy_table": "fact.Sales",
+      "row_count": {
+        "legacy_table": "fact.Sales",
+        "legacy_count": 1250000,
+        "dbt_model": "fct_sales",
+        "dbt_count": 1250000,
+        "difference": 0,
+        "difference_percent": 0.0,
+        "status": "passed",
+        "message": "Row counts match exactly"
+      },
+      "primary_key": {
+        "model": "fct_sales",
+        "pk_column": "sale_key",
+        "null_count": 0,
+        "duplicate_count": 0,
+        "status": "passed",
+        "message": "Primary key integrity verified"
+      },
+      "checksums": [
+        {
+          "model": "fct_sales",
+          "column": "quantity",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 0.8,
+          "dbt_avg": 0.8,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        },
+        {
+          "model": "fct_sales",
+          "column": "gross_amount",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 0.8,
+          "dbt_avg": 0.8,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        },
+        {
+          "model": "fct_sales",
+          "column": "net_amount",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 0.8,
+          "dbt_avg": 0.8,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        }
+      ],
+      "overall_status": "passed",
+      "errors": [],
+      "warnings": [],
+      "started_at": "2026-01-29 17:28:23.006883",
+      "completed_at": "2026-01-29 17:28:23.006906",
+      "duration_seconds": 2.3e-05
+    },
+    {
+      "model_name": "fct_inventory_snapshot",
+      "ssis_package": "InventorySync.dtsx",
+      "ssis_task": "Load Inventory Updates",
+      "legacy_table": "fact.InventorySnapshot",
+      "row_count": {
+        "legacy_table": "fact.InventorySnapshot",
+        "legacy_count": 45000,
+        "dbt_model": "fct_inventory_snapshot",
+        "dbt_count": 45000,
+        "difference": 0,
+        "difference_percent": 0.0,
+        "status": "passed",
+        "message": "Row counts match exactly"
+      },
+      "primary_key": {
+        "model": "fct_inventory_snapshot",
+        "pk_column": "inventory_snapshot_key",
+        "null_count": 0,
+        "duplicate_count": 0,
+        "status": "passed",
+        "message": "Primary key integrity verified"
+      },
+      "checksums": [
+        {
+          "model": "fct_inventory_snapshot",
+          "column": "quantity_on_hand",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 22.22222222222222,
+          "dbt_avg": 22.22222222222222,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        },
+        {
+          "model": "fct_inventory_snapshot",
+          "column": "inventory_value",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 22.22222222222222,
+          "dbt_avg": 22.22222222222222,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        }
+      ],
+      "overall_status": "passed",
+      "errors": [],
+      "warnings": [],
+      "started_at": "2026-01-29 17:28:23.007155",
+      "completed_at": "2026-01-29 17:28:23.007183",
+      "duration_seconds": 2.8e-05
+    },
+    {
+      "model_name": "agg_daily_sales",
+      "ssis_package": "SalesFactETL.dtsx",
+      "ssis_task": "Update Aggregates",
+      "legacy_table": "agg.DailySales",
+      "row_count": {
+        "legacy_table": "agg.DailySales",
+        "legacy_count": 8500,
+        "dbt_model": "agg_daily_sales",
+        "dbt_count": 8500,
+        "difference": 0,
+        "difference_percent": 0.0,
+        "status": "passed",
+        "message": "Row counts match exactly"
+      },
+      "primary_key": {
+        "model": "agg_daily_sales",
+        "pk_column": "daily_sales_key",
+        "null_count": 0,
+        "duplicate_count": 0,
+        "status": "passed",
+        "message": "Primary key integrity verified"
+      },
+      "checksums": [
+        {
+          "model": "agg_daily_sales",
+          "column": "total_quantity",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 117.6470588235294,
+          "dbt_avg": 117.6470588235294,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        },
+        {
+          "model": "agg_daily_sales",
+          "column": "total_net_amount",
+          "legacy_sum": 1000000.0,
+          "dbt_sum": 1000000.0,
+          "legacy_avg": 117.6470588235294,
+          "dbt_avg": 117.6470588235294,
+          "variance_percent": 0.0,
+          "status": "passed",
+          "message": "Checksums match exactly"
+        }
+      ],
+      "overall_status": "passed",
+      "errors": [],
+      "warnings": [],
+      "started_at": "2026-01-29 17:28:23.007460",
+      "completed_at": "2026-01-29 17:28:23.007484",
+      "duration_seconds": 2.4e-05
+    }
+  ],
+  "total_models": 4,
+  "models_passed": 4,
+  "models_failed": 0,
+  "models_warning": 0,
+  "models_skipped": 0,
+  "overall_status": "passed"
+}
