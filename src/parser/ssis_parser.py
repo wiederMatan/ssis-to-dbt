@@ -15,6 +15,23 @@ from lxml import etree
 from rich.console import Console
 from rich.table import Table
 
+# Secure XML parser configuration to prevent XXE attacks
+def _create_secure_parser() -> etree.XMLParser:
+    """
+    Create a secure XML parser with external entity processing disabled.
+
+    This prevents XXE (XML External Entity) attacks that could:
+    - Read arbitrary files from the filesystem
+    - Perform SSRF (Server-Side Request Forgery) attacks
+    - Cause denial of service via entity expansion (Billion Laughs attack)
+    """
+    return etree.XMLParser(
+        resolve_entities=False,
+        no_network=True,
+        dtd_validation=False,
+        load_dtd=False,
+    )
+
 from .constants import MANUAL_REVIEW_TASKS, NAMESPACES, VARIABLE_DATA_TYPES
 from .models import (
     ColumnInfo,
@@ -96,7 +113,9 @@ class SSISParser:
             Parsed SSISPackage object
         """
         file_path = Path(file_path)
-        tree = etree.parse(str(file_path))
+        # Use secure parser to prevent XXE attacks
+        secure_parser = _create_secure_parser()
+        tree = etree.parse(str(file_path), parser=secure_parser)
         root = tree.getroot()
 
         ns = NAMESPACES["DTS"]
