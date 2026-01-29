@@ -1,0 +1,311 @@
+<?xml version="1.0"?>
+<DTS:Executable xmlns:DTS="www.microsoft.com/SqlServer/Dts"
+                xmlns:SQLTask="www.microsoft.com/sqlserver/dts/tasks/sqltask"
+                DTS:refId="Package"
+                DTS:ObjectName="InventorySync"
+                DTS:Description="Inventory synchronization with external API - includes Script Task for manual review"
+                DTS:CreatorComputerName="DEVSERVER"
+                DTS:CreatorName="ETLDeveloper"
+                DTS:CreationDate="2024-02-01T09:00:00"
+                DTS:DTSID="{PKG-003-INV-SYNC}">
+
+  <!-- Connection Managers -->
+  <DTS:ConnectionManagers>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[InventoryAPI]"
+                           DTS:ObjectName="InventoryAPI"
+                           DTS:DTSID="{E5F6A7B8-C9D0-1234-EFAB-567890123456}"
+                           DTS:Description="HTTP connection to Inventory REST API">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="https://api.inventory.example.com/v2"/>
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+    <DTS:ConnectionManager DTS:refId="Package.ConnectionManagers[WarehouseDW]"
+                           DTS:ObjectName="WarehouseDW"
+                           DTS:DTSID="{F6A7B8C9-D0E1-2345-FABC-678901234567}"
+                           DTS:Description="Connection to Warehouse Data Mart">
+      <DTS:ObjectData>
+        <DTS:ConnectionManager DTS:ConnectionString="Data Source=DWSRV;Initial Catalog=WarehouseDM;Provider=SQLNCLI11.1;Integrated Security=SSPI;"/>
+      </DTS:ObjectData>
+    </DTS:ConnectionManager>
+  </DTS:ConnectionManagers>
+
+  <!-- Variables -->
+  <DTS:Variables>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="LastSyncTime">
+      <DTS:VariableValue DTS:DataType="7">2024-01-31T00:00:00</DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="APIEndpoint">
+      <DTS:VariableValue DTS:DataType="8">/inventory/changes</DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="APIResponse">
+      <DTS:VariableValue DTS:DataType="8"></DTS:VariableValue>
+    </DTS:Variable>
+    <DTS:Variable DTS:Namespace="User" DTS:ObjectName="RecordsProcessed">
+      <DTS:VariableValue DTS:DataType="3">0</DTS:VariableValue>
+    </DTS:Variable>
+  </DTS:Variables>
+
+  <!-- Executables (Tasks) -->
+  <DTS:Executables>
+    <!-- Execute SQL Task: Get Last Sync Timestamp -->
+    <DTS:Executable DTS:refId="Package\Get Last Sync Time"
+                    DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+                    DTS:ObjectName="Get Last Sync Time"
+                    DTS:Description="Retrieve the timestamp of the last successful inventory sync">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData SQLTask:Connection="{F6A7B8C9-D0E1-2345-FABC-678901234567}"
+                             SQLTask:SqlStatementSource="SELECT TOP 1 LastSyncTime
+FROM etl.SyncLog
+WHERE SyncType = 'Inventory'
+  AND Status = 'Success'
+ORDER BY LastSyncTime DESC;"
+                             SQLTask:ResultType="ResultSetType_SingleRow"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Script Task: Call Inventory API (FLAGGED FOR MANUAL REVIEW) -->
+    <DTS:Executable DTS:refId="Package\Call Inventory API"
+                    DTS:ExecutableType="Microsoft.ScriptTask"
+                    DTS:ObjectName="Call Inventory API"
+                    DTS:Description="Call external REST API to fetch inventory changes - REQUIRES MANUAL CONVERSION">
+      <DTS:ObjectData>
+        <ScriptProject Name="SC_CallInventoryAPI" Language="CSharp" EntryPoint="Main">
+          <ReadOnlyVariables>User::LastSyncTime,User::APIEndpoint</ReadOnlyVariables>
+          <ReadWriteVariables>User::APIResponse,User::RecordsProcessed</ReadWriteVariables>
+          <Script>
+            // This Script Task calls an external REST API
+            // It reads LastSyncTime and APIEndpoint variables
+            // Makes HTTP GET request to fetch inventory changes since last sync
+            // Stores JSON response in APIResponse variable
+            // Parses record count into RecordsProcessed variable
+            //
+            // MANUAL CONVERSION REQUIRED:
+            // Consider converting to:
+            // 1. dbt Python model using requests library
+            // 2. Pre-dbt Python script that stages API data to a table
+            // 3. Airbyte/Fivetran connector if available
+          </Script>
+        </ScriptProject>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Data Flow Task: Load Inventory Updates -->
+    <DTS:Executable DTS:refId="Package\Load Inventory Updates"
+                    DTS:ExecutableType="Microsoft.Pipeline"
+                    DTS:ObjectName="Load Inventory Updates"
+                    DTS:Description="Load inventory changes from staging to dimension">
+      <DTS:ObjectData>
+        <pipeline version="1">
+          <components>
+            <!-- OLE DB Source: Staged API Data -->
+            <component refId="Package\Load Inventory Updates\Staged Data Source"
+                       componentClassID="Microsoft.OLEDBSource"
+                       name="Staged Data Source"
+                       description="Read inventory data staged by Script Task">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT
+    ProductSKU,
+    WarehouseCode,
+    QuantityOnHand,
+    QuantityReserved,
+    QuantityAvailable,
+    LastCountDate,
+    ReorderPoint,
+    MaxStockLevel,
+    UnitCost
+FROM stg.InventoryAPI
+WHERE ProcessedFlag = 0</property>
+                <property name="AccessMode" dataType="System.Int32">2</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Inventory Updates\Staged Data Source.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[WarehouseDW]"
+                           name="OleDbConnection"/>
+              </connections>
+              <outputs>
+                <output refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output]" name="OLE DB Source Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[ProductSKU]"
+                                  dataType="wstr" length="50" name="ProductSKU"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[WarehouseCode]"
+                                  dataType="wstr" length="10" name="WarehouseCode"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[QuantityOnHand]"
+                                  dataType="i4" name="QuantityOnHand"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[QuantityReserved]"
+                                  dataType="i4" name="QuantityReserved"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[QuantityAvailable]"
+                                  dataType="i4" name="QuantityAvailable"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[LastCountDate]"
+                                  dataType="dbDate" name="LastCountDate"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[ReorderPoint]"
+                                  dataType="i4" name="ReorderPoint"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[MaxStockLevel]"
+                                  dataType="i4" name="MaxStockLevel"/>
+                    <outputColumn refId="Package\Load Inventory Updates\Staged Data Source.Outputs[OLE DB Source Output].Columns[UnitCost]"
+                                  dataType="numeric" precision="18" scale="4" name="UnitCost"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup: Product Key -->
+            <component refId="Package\Load Inventory Updates\Lookup Product"
+                       componentClassID="Microsoft.Lookup"
+                       name="Lookup Product"
+                       description="Get ProductKey from SKU">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT ProductKey, SKU FROM dim.Product WHERE IsActive = 1</property>
+                <property name="CacheType" dataType="System.Int32">0</property>
+                <property name="NoMatchBehavior" dataType="System.Int32">1</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Inventory Updates\Lookup Product.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[WarehouseDW]"
+                           name="OleDbConnection"/>
+              </connections>
+              <outputs>
+                <output refId="Package\Load Inventory Updates\Lookup Product.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Inventory Updates\Lookup Product.Outputs[Lookup Match Output].Columns[ProductKey]"
+                                  dataType="i4" name="ProductKey"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Lookup: Warehouse Key -->
+            <component refId="Package\Load Inventory Updates\Lookup Warehouse"
+                       componentClassID="Microsoft.Lookup"
+                       name="Lookup Warehouse"
+                       description="Get WarehouseKey from code">
+              <properties>
+                <property name="SqlCommand" dataType="System.String">SELECT WarehouseKey, WarehouseCode FROM dim.Warehouse</property>
+                <property name="CacheType" dataType="System.Int32">0</property>
+                <property name="NoMatchBehavior" dataType="System.Int32">1</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Inventory Updates\Lookup Warehouse.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[WarehouseDW]"
+                           name="OleDbConnection"/>
+              </connections>
+              <outputs>
+                <output refId="Package\Load Inventory Updates\Lookup Warehouse.Outputs[Lookup Match Output]" name="Lookup Match Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Inventory Updates\Lookup Warehouse.Outputs[Lookup Match Output].Columns[WarehouseKey]"
+                                  dataType="i4" name="WarehouseKey"/>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- Derived Column: Calculate Inventory Metrics -->
+            <component refId="Package\Load Inventory Updates\Calculate Metrics"
+                       componentClassID="Microsoft.DerivedColumn"
+                       name="Calculate Metrics"
+                       description="Calculate inventory value and stock status">
+              <inputs>
+                <input refId="Package\Load Inventory Updates\Calculate Metrics.Inputs[Derived Column Input]" name="Derived Column Input"/>
+              </inputs>
+              <outputs>
+                <output refId="Package\Load Inventory Updates\Calculate Metrics.Outputs[Derived Column Output]" name="Derived Column Output">
+                  <outputColumns>
+                    <outputColumn refId="Package\Load Inventory Updates\Calculate Metrics.Outputs[Derived Column Output].Columns[InventoryValue]"
+                                  dataType="numeric" precision="18" scale="4" name="InventoryValue">
+                      <properties>
+                        <property name="Expression">[QuantityOnHand] * [UnitCost]</property>
+                        <property name="FriendlyExpression">QuantityOnHand * UnitCost</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\Load Inventory Updates\Calculate Metrics.Outputs[Derived Column Output].Columns[StockStatus]"
+                                  dataType="wstr" length="20" name="StockStatus">
+                      <properties>
+                        <property name="Expression">[QuantityAvailable] &lt;= 0 ? "Out of Stock" : ([QuantityAvailable] &lt; [ReorderPoint] ? "Low Stock" : "In Stock")</property>
+                        <property name="FriendlyExpression">CASE WHEN QuantityAvailable &lt;= 0 THEN 'Out of Stock' WHEN QuantityAvailable &lt; ReorderPoint THEN 'Low Stock' ELSE 'In Stock' END</property>
+                      </properties>
+                    </outputColumn>
+                    <outputColumn refId="Package\Load Inventory Updates\Calculate Metrics.Outputs[Derived Column Output].Columns[DaysOfSupply]"
+                                  dataType="i4" name="DaysOfSupply">
+                      <properties>
+                        <property name="Expression">[ReorderPoint] > 0 ? ([QuantityAvailable] / [ReorderPoint]) * 30 : 0</property>
+                        <property name="FriendlyExpression">(QuantityAvailable / ReorderPoint) * 30</property>
+                      </properties>
+                    </outputColumn>
+                  </outputColumns>
+                </output>
+              </outputs>
+            </component>
+
+            <!-- OLE DB Destination: Inventory Snapshot -->
+            <component refId="Package\Load Inventory Updates\Inventory Destination"
+                       componentClassID="Microsoft.OLEDBDestination"
+                       name="Inventory Destination"
+                       description="Load to inventory snapshot table">
+              <properties>
+                <property name="OpenRowset" dataType="System.String">[fact].[InventorySnapshot]</property>
+                <property name="AccessMode" dataType="System.Int32">3</property>
+              </properties>
+              <connections>
+                <connection refId="Package\Load Inventory Updates\Inventory Destination.Connections[OleDbConnection]"
+                           connectionManagerRefId="Package.ConnectionManagers[WarehouseDW]"
+                           name="OleDbConnection"/>
+              </connections>
+            </component>
+          </components>
+        </pipeline>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Execute SQL Task: Update Sync Log -->
+    <DTS:Executable DTS:refId="Package\Update Sync Log"
+                    DTS:ExecutableType="Microsoft.ExecuteSQLTask"
+                    DTS:ObjectName="Update Sync Log"
+                    DTS:Description="Record successful sync completion">
+      <DTS:ObjectData>
+        <SQLTask:SqlTaskData SQLTask:Connection="{F6A7B8C9-D0E1-2345-FABC-678901234567}"
+                             SQLTask:SqlStatementSource="INSERT INTO etl.SyncLog (SyncType, LastSyncTime, RecordsProcessed, Status, CompletedAt)
+VALUES ('Inventory', GETDATE(), @RecordsProcessed, 'Success', GETDATE());
+
+UPDATE stg.InventoryAPI SET ProcessedFlag = 1 WHERE ProcessedFlag = 0;"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+
+    <!-- Send Mail Task: Notify on Completion (SKIPPED - Document Only) -->
+    <DTS:Executable DTS:refId="Package\Send Completion Email"
+                    DTS:ExecutableType="Microsoft.SendMailTask"
+                    DTS:ObjectName="Send Completion Email"
+                    DTS:Description="Send email notification - SKIPPED in dbt conversion, document only">
+      <DTS:ObjectData>
+        <SendMailTask:SendMailTaskData
+            SendMailTask:SMTPServer="smtp.example.com"
+            SendMailTask:From="etl@example.com"
+            SendMailTask:To="dataops@example.com"
+            SendMailTask:Subject="Inventory Sync Complete"
+            SendMailTask:MessageSource="Inventory sync completed successfully. Records processed: @[User::RecordsProcessed]"/>
+      </DTS:ObjectData>
+    </DTS:Executable>
+  </DTS:Executables>
+
+  <!-- Precedence Constraints -->
+  <DTS:PrecedenceConstraints>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Get Sync to API]"
+                              DTS:From="Package\Get Last Sync Time"
+                              DTS:To="Package\Call Inventory API"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[API to Load]"
+                              DTS:From="Package\Call Inventory API"
+                              DTS:To="Package\Load Inventory Updates"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Load to Log]"
+                              DTS:From="Package\Load Inventory Updates"
+                              DTS:To="Package\Update Sync Log"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+    <DTS:PrecedenceConstraint DTS:refId="Package.PrecedenceConstraints[Log to Email]"
+                              DTS:From="Package\Update Sync Log"
+                              DTS:To="Package\Send Completion Email"
+                              DTS:LogicalAnd="True"
+                              DTS:Value="0"/>
+  </DTS:PrecedenceConstraints>
+</DTS:Executable>
