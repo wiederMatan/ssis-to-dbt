@@ -1,0 +1,88 @@
+# SSIS-to-dbt Multi-Agent Pipeline Configuration
+
+# LLM Configuration
+llm:
+  provider: openai
+  model: gpt-4o
+  temperature: 0.2
+  max_tokens: 4096
+  # API key should be set via OPENAI_API_KEY environment variable
+
+# Validation Settings
+validation:
+  row_count_tolerance: 0.01    # 1% tolerance for row count differences
+  checksum_tolerance: 0.0001   # 0.01% tolerance for numeric checksums
+  max_retries: 3               # Maximum retry attempts on validation failure
+
+# Database Connections
+# Use environment variables for sensitive values
+connections:
+  source:
+    # Source database (legacy SSIS target)
+    server: ${SOURCE_SQL_SERVER_HOST:-localhost}
+    database: ${SOURCE_SQL_SERVER_DB:-master}
+    driver: "ODBC Driver 17 for SQL Server"
+    trusted_connection: true
+    # For SQL auth, set these env vars:
+    # SOURCE_SQL_SERVER_USER
+    # SOURCE_SQL_SERVER_PASSWORD
+
+  target:
+    # Target database (dbt output)
+    server: ${TARGET_SQL_SERVER_HOST:-localhost}
+    database: ${TARGET_SQL_SERVER_DB:-master}
+    driver: "ODBC Driver 17 for SQL Server"
+    trusted_connection: true
+    # For SQL auth, set these env vars:
+    # TARGET_SQL_SERVER_USER
+    # TARGET_SQL_SERVER_PASSWORD
+
+# Approval Settings
+approval:
+  mode: cli                    # cli, web, or skip
+  timeout: 300                 # Timeout in seconds for approval prompts
+
+# dbt Configuration
+dbt:
+  project_path: ./dbt_project
+  profiles_dir: ~/.dbt
+  target: dev
+  commands:
+    - deps
+    - run
+    - test
+  command_timeout: 600         # 10 minutes per command
+
+# Agent Behavior
+agents:
+  analyzer:
+    detect_incremental: true   # Detect incremental load patterns
+    detect_scd: true           # Detect SCD patterns
+    use_llm_analysis: true     # Use LLM for complex SQL analysis
+
+  builder:
+    generate_staging: true     # Generate staging models
+    generate_core: true        # Generate core models
+    generate_sources: true     # Generate source definitions
+    use_llm_generation: true   # Use LLM for code generation
+
+  executor:
+    require_approval: true     # Require approval before execution
+    write_backup: false        # Backup existing files before overwriting
+
+  validator:
+    validate_row_counts: true
+    validate_primary_keys: true
+    validate_checksums: true
+    checksum_columns: []       # Override per-model in mapping
+
+  diagnoser:
+    generate_investigation_queries: true
+    use_llm_diagnosis: true
+
+# Output Configuration
+output:
+  state_dir: ./output/state
+  reports_dir: ./output/reports
+  save_intermediate: true      # Save intermediate results
+  generate_markdown: true      # Generate markdown reports
