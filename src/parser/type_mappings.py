@@ -1,5 +1,7 @@
 """SSIS to SQL Server data type mappings."""
 
+from .utils import SQLIdentifierError, sanitize_sql_identifier, validate_sql_identifier
+
 # SSIS to SQL Server type mapping
 # Based on Microsoft Integration Services Data Types documentation
 SSIS_TO_SQL_TYPE_MAP = {
@@ -97,7 +99,12 @@ def map_ssis_type_to_sql(
     return base_type
 
 
-def get_dbt_cast_expression(column_name: str, ssis_type: str, sql_type: str) -> str:
+def get_dbt_cast_expression(
+    column_name: str,
+    ssis_type: str,
+    sql_type: str,
+    strict: bool = True,
+) -> str:
     """
     Generate a dbt CAST expression for type conversion.
 
@@ -105,10 +112,28 @@ def get_dbt_cast_expression(column_name: str, ssis_type: str, sql_type: str) -> 
         column_name: The source column name
         ssis_type: The SSIS data type
         sql_type: The target SQL Server type
+        strict: If True, raise error on invalid identifiers. If False, sanitize them.
 
     Returns:
         A CAST expression string for use in dbt models
+
+    Raises:
+        SQLIdentifierError: If column_name is not a valid SQL identifier and strict=True.
     """
+    # Validate column name to prevent SQL injection
+    if not validate_sql_identifier(column_name):
+        if strict:
+            raise SQLIdentifierError(
+                column_name,
+                "Column name contains invalid characters and cannot be used in SQL"
+            )
+        # In non-strict mode, sanitize the identifier
+        column_name = sanitize_sql_identifier(column_name)
+
+    # Validate SQL type (should only contain safe characters)
+    if not validate_sql_identifier(sql_type.split('(')[0]):
+        raise SQLIdentifierError(sql_type, "Invalid SQL type")
+
     # For most types, a simple CAST is sufficient
     return f"CAST({column_name} AS {sql_type})"
 

@@ -1,9 +1,11 @@
 """Pydantic models for parsed SSIS package data."""
 
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer
+
+from .utils import redact_connection_string
 
 
 class TaskType(str, Enum):
@@ -41,6 +43,11 @@ class ConnectionManager(BaseModel):
     server: Optional[str] = None
     database: Optional[str] = None
     provider: Optional[str] = None
+
+    @field_serializer('connection_string')
+    def redact_credentials(self, v: str) -> str:
+        """Redact sensitive credentials when serializing to JSON/dict."""
+        return redact_connection_string(v)
 
 
 class Variable(BaseModel):
