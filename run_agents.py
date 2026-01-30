@@ -13,6 +13,7 @@ Usage:
 import argparse
 import asyncio
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -22,6 +23,30 @@ from src.logging_config import setup_logging, get_logger
 
 console = Console()
 logger = get_logger(__name__)
+
+# SECURITY: Pattern for valid run IDs (alphanumeric, underscore, hyphen only)
+# Prevents path traversal attacks via --resume parameter
+RUN_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]+$')
+MAX_RUN_ID_LENGTH = 64
+
+
+def validate_run_id(run_id: str) -> bool:
+    """
+    Validate that a run ID is safe and doesn't contain path traversal attempts.
+
+    Args:
+        run_id: The run ID to validate.
+
+    Returns:
+        True if valid, False otherwise.
+    """
+    if not run_id:
+        return False
+    if len(run_id) > MAX_RUN_ID_LENGTH:
+        return False
+    if '..' in run_id or '/' in run_id or '\\' in run_id:
+        return False
+    return bool(RUN_ID_PATTERN.match(run_id))
 
 
 def parse_args() -> argparse.Namespace:
@@ -167,6 +192,15 @@ async def main() -> int:
             "[red]Error: input_dir is required unless using --resume[/red]"
         )
         console.print("Use --help for usage information")
+        return 1
+
+    # SECURITY: Validate --resume parameter to prevent path traversal
+    if args.resume and not validate_run_id(args.resume):
+        console.print(
+            "[red]Error: Invalid run ID format. "
+            "Run IDs must contain only alphanumeric characters, underscores, and hyphens.[/red]"
+        )
+        logger.warning(f"Rejected invalid run ID: {args.resume[:50]}...")
         return 1
 
     # Check input directory exists

@@ -7,10 +7,8 @@ from typing import Any, Generator, Optional
 
 from pydantic import BaseModel, Field, SecretStr
 
-# Import SQL identifier validation
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from parser.utils import SQLIdentifierError, validate_sql_identifier
+# Import SQL identifier validation using canonical path
+from src.parser.utils import SQLIdentifierError, validate_sql_identifier
 
 try:
     import pyodbc

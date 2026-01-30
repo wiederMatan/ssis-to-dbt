@@ -3,11 +3,13 @@
 import pytest
 
 from src.parser.utils import (
+    PathTraversalError,
     SQLIdentifierError,
     redact_connection_string,
     redact_dict_credentials,
     sanitize_sql_identifier,
     validate_sql_identifier,
+    validate_safe_path,
 )
 
 
@@ -64,6 +66,31 @@ class TestRedactConnectionString:
         result = redact_connection_string(conn)
         assert result == conn
 
+    def test_redacts_quoted_password_with_semicolons(self):
+        """Should properly redact passwords with semicolons when quoted."""
+        conn = 'Server=localhost;Password="pass;word;here";Database=test'
+        result = redact_connection_string(conn)
+        assert "pass;word;here" not in result
+        assert '***REDACTED***' in result
+
+    def test_redacts_single_quoted_password(self):
+        """Should redact single-quoted passwords."""
+        conn = "Server=localhost;Password='secret;value';Database=test"
+        result = redact_connection_string(conn)
+        assert "secret;value" not in result
+
+    def test_redacts_bearer_token(self):
+        """Should redact Bearer tokens."""
+        auth = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+        result = redact_connection_string(auth)
+        assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in result
+
+    def test_redacts_token_parameter(self):
+        """Should redact Token= values."""
+        conn = "Server=localhost;Token=abc123secret;"
+        result = redact_connection_string(conn)
+        assert "abc123secret" not in result
+
 
 class TestRedactDictCredentials:
     """Tests for redact_dict_credentials function."""
@@ -100,6 +127,18 @@ class TestRedactDictCredentials:
         assert "one" not in str(result)
         assert "two" not in str(result)
 
+    def test_redacts_token_field(self):
+        """Should redact token fields."""
+        data = {"access_token": "secret-token-value"}
+        result = redact_dict_credentials(data)
+        assert "secret-token-value" not in str(result)
+
+    def test_redacts_private_key_field(self):
+        """Should redact private_key fields."""
+        data = {"private_key": "-----BEGIN RSA PRIVATE KEY-----"}
+        result = redact_dict_credentials(data)
+        assert "-----BEGIN RSA PRIVATE KEY-----" not in str(result)
+
 
 class TestValidateSqlIdentifier:
     """Tests for validate_sql_identifier function."""
@@ -115,13 +154,12 @@ class TestValidateSqlIdentifier:
         assert validate_sql_identifier("col1") is True
         assert validate_sql_identifier("table_2") is True
 
-    def test_valid_special_chars(self):
-        """Should accept SQL Server special characters in identifiers."""
-        # $ is valid within identifiers
-        assert validate_sql_identifier("col$name") is True
-        # @ and # at start are for variables/temp tables - our pattern
-        # allows them in the middle but they typically start identifiers
-        assert validate_sql_identifier("col_with_$") is True
+    def test_rejects_special_chars_for_security(self):
+        """Should reject @, #, $ for security (even though SQL Server allows them)."""
+        # These are now rejected for security - they have special meaning in dynamic SQL
+        assert validate_sql_identifier("col$name") is False
+        assert validate_sql_identifier("@variable") is False
+        assert validate_sql_identifier("#temp") is False
 
     def test_invalid_starts_with_number(self):
         """Should reject identifiers starting with numbers."""
@@ -153,6 +191,18 @@ class TestValidateSqlIdentifier:
         max_name = "a" * 128
         assert validate_sql_identifier(max_name) is True
 
+    def test_rejects_reserved_keywords_by_default(self):
+        """Should reject SQL reserved keywords by default."""
+        assert validate_sql_identifier("SELECT") is False
+        assert validate_sql_identifier("select") is False
+        assert validate_sql_identifier("DROP") is False
+        assert validate_sql_identifier("DELETE") is False
+
+    def test_allows_reserved_keywords_when_flag_set(self):
+        """Should allow reserved keywords when allow_reserved=True."""
+        assert validate_sql_identifier("SELECT", allow_reserved=True) is True
+        assert validate_sql_identifier("table", allow_reserved=True) is True
+
 
 class TestSanitizeSqlIdentifier:
     """Tests for sanitize_sql_identifier function."""
@@ -165,6 +215,17 @@ class TestSanitizeSqlIdentifier:
         """Should replace invalid special characters."""
         assert sanitize_sql_identifier("col-name") == "col_name"
         assert sanitize_sql_identifier("col.name") == "col_name"
+
+    def test_sanitizes_at_symbol(self):
+        """Should replace @ symbol (now restricted for security)."""
+        result = sanitize_sql_identifier("@variable")
+        assert "@" not in result
+        assert result == "_variable"
+
+    def test_sanitizes_dollar_sign(self):
+        """Should replace $ symbol (now restricted for security)."""
+        result = sanitize_sql_identifier("col$name")
+        assert "$" not in result
 
     def test_fixes_leading_number(self):
         """Should prefix underscore for leading numbers."""
@@ -185,6 +246,17 @@ class TestSanitizeSqlIdentifier:
         assert sanitize_sql_identifier("valid_name") == "valid_name"
         assert sanitize_sql_identifier("CamelCase") == "CamelCase"
 
+    def test_removes_consecutive_underscores(self):
+        """Should collapse consecutive underscores."""
+        result = sanitize_sql_identifier("col__name")
+        assert "__" not in result
+
+    def test_handles_reserved_keywords(self):
+        """Should add suffix to reserved keywords."""
+        result = sanitize_sql_identifier("SELECT")
+        assert result != "SELECT"
+        assert "col" in result.lower()
+
 
 class TestSQLIdentifierError:
     """Tests for SQLIdentifierError exception."""
@@ -200,3 +272,43 @@ class TestSQLIdentifierError:
         error = SQLIdentifierError("test", "Invalid")
         assert error.identifier == "test"
         assert error.reason == "Invalid"
+
+
+class TestPathTraversalError:
+    """Tests for PathTraversalError exception."""
+
+    def test_error_message_includes_path(self):
+        """Should include the path in error message."""
+        error = PathTraversalError("../../../etc/passwd", "Path traversal detected")
+        assert "../../../etc/passwd" in str(error)
+        assert "Path traversal detected" in str(error)
+
+    def test_error_attributes(self):
+        """Should store path and reason as attributes."""
+        error = PathTraversalError("../secret", "Invalid path")
+        assert error.path == "../secret"
+        assert error.reason == "Invalid path"
+
+
+class TestValidateSafePath:
+    """Tests for validate_safe_path function."""
+
+    def test_valid_path_within_base(self):
+        """Should accept paths within base directory."""
+        assert validate_safe_path("subdir/file.txt", "/tmp/base") is True
+        assert validate_safe_path("file.txt", "/tmp/base") is True
+
+    def test_rejects_path_with_double_dots(self):
+        """Should reject paths with .. traversal."""
+        with pytest.raises(PathTraversalError):
+            validate_safe_path("../etc/passwd", "/tmp/base")
+
+    def test_rejects_absolute_path_escape(self):
+        """Should reject paths that escape base directory."""
+        with pytest.raises(PathTraversalError):
+            validate_safe_path("subdir/../../etc/passwd", "/tmp/base")
+
+    def test_rejects_empty_paths(self):
+        """Should reject empty paths."""
+        assert validate_safe_path("", "/tmp/base") is False
+        assert validate_safe_path("file.txt", "") is False
