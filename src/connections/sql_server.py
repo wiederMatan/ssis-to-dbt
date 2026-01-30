@@ -1,15 +1,24 @@
 """SQL Server connection handler using pyodbc."""
 
+import logging
 import os
 from contextlib import contextmanager
 from typing import Any, Generator, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
+
+# Import SQL identifier validation
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from parser.utils import SQLIdentifierError, validate_sql_identifier
 
 try:
     import pyodbc
 except ImportError:
     pyodbc = None  # type: ignore
+
+
+logger = logging.getLogger(__name__)
 
 
 class SQLServerConfig(BaseModel):
@@ -20,20 +29,29 @@ class SQLServerConfig(BaseModel):
     driver: str = "ODBC Driver 17 for SQL Server"
     trusted_connection: bool = True
     username: Optional[str] = None
-    password: Optional[str] = None
+    password: Optional[SecretStr] = None  # Use SecretStr to prevent accidental logging
     timeout: int = 30
+
+    def __repr__(self) -> str:
+        """Safe repr that doesn't expose password."""
+        return (
+            f"SQLServerConfig(server={self.server!r}, database={self.database!r}, "
+            f"driver={self.driver!r}, trusted_connection={self.trusted_connection}, "
+            f"username={self.username!r}, password=***)"
+        )
 
     @classmethod
     def from_env(cls, prefix: str = "") -> "SQLServerConfig":
         """Create config from environment variables."""
         p = prefix.upper() + "_" if prefix else ""
+        pwd = os.getenv(f"{p}SQL_SERVER_PASSWORD")
         return cls(
             server=os.getenv(f"{p}SQL_SERVER_HOST", "localhost"),
             database=os.getenv(f"{p}SQL_SERVER_DB", "master"),
             driver=os.getenv(f"{p}SQL_SERVER_DRIVER", "ODBC Driver 17 for SQL Server"),
             trusted_connection=os.getenv(f"{p}SQL_SERVER_TRUSTED", "true").lower() == "true",
             username=os.getenv(f"{p}SQL_SERVER_USER"),
-            password=os.getenv(f"{p}SQL_SERVER_PASSWORD"),
+            password=SecretStr(pwd) if pwd else None,
         )
 
 
@@ -63,7 +81,8 @@ class SQLServerConnection:
             if self.config.username:
                 parts.append(f"UID={self.config.username}")
             if self.config.password:
-                parts.append(f"PWD={self.config.password}")
+                # SecretStr.get_secret_value() to access the actual password
+                parts.append(f"PWD={self.config.password.get_secret_value()}")
 
         return ";".join(parts)
 
@@ -131,9 +150,18 @@ class SQLServerConnection:
             row = cursor.fetchone()
             return row[0] if row else None
 
+    def _validate_identifier(self, name: str, identifier_type: str = "identifier") -> None:
+        """Validate SQL identifier to prevent injection."""
+        if not validate_sql_identifier(name):
+            raise SQLIdentifierError(name, f"Invalid SQL {identifier_type}")
+
     def get_row_count(self, table: str, schema: str = "dbo") -> int:
         """Get row count for a table."""
+        self._validate_identifier(table, "table name")
+        self._validate_identifier(schema, "schema name")
+
         query = f"SELECT COUNT(*) FROM [{schema}].[{table}]"
+        logger.debug(f"Executing row count query for {schema}.{table}")
         result = self.execute_scalar(query)
         return int(result) if result else 0
 
@@ -153,7 +181,15 @@ class SQLServerConnection:
 
         Returns:
             Dict with SUM and AVG for each column
+
+        Raises:
+            SQLIdentifierError: If any identifier is invalid
         """
+        self._validate_identifier(table, "table name")
+        self._validate_identifier(schema, "schema name")
+        for col in columns:
+            self._validate_identifier(col, "column name")
+
         checksums: dict[str, float] = {}
 
         for col in columns:
@@ -163,6 +199,7 @@ class SQLServerConnection:
                     ISNULL(AVG(CAST([{col}] AS FLOAT)), 0) AS avg_val
                 FROM [{schema}].[{table}]
             """
+            logger.debug(f"Executing checksum query for {schema}.{table}.{col}")
             result = self.execute_query(query)
             if result:
                 checksums[f"{col}_sum"] = float(result[0].get("sum_val", 0))
@@ -186,7 +223,14 @@ class SQLServerConnection:
 
         Returns:
             Dict with null_count and duplicate_count
+
+        Raises:
+            SQLIdentifierError: If any identifier is invalid
         """
+        self._validate_identifier(table, "table name")
+        self._validate_identifier(schema, "schema name")
+        self._validate_identifier(pk_column, "column name")
+
         null_query = f"""
             SELECT COUNT(*) AS null_count
             FROM [{schema}].[{table}]
@@ -202,6 +246,7 @@ class SQLServerConnection:
             ) AS dups
         """
 
+        logger.debug(f"Checking primary key integrity for {schema}.{table}.{pk_column}")
         null_result = self.execute_scalar(null_query)
         dup_result = self.execute_scalar(dup_query)
 

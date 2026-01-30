@@ -1,5 +1,6 @@
 """Executor Agent - Writes files and runs dbt commands."""
 
+import logging
 import subprocess
 import time
 from pathlib import Path
@@ -14,6 +15,13 @@ from .base import (
 )
 from .context import MigrationContext
 from ..cli.approval import CLIApprovalHandler
+
+logger = logging.getLogger(__name__)
+
+
+class PathTraversalError(ValueError):
+    """Raised when a path traversal attack is detected."""
+    pass
 
 
 class ExecutorAgent(BaseAgent):
@@ -155,19 +163,56 @@ class ExecutorAgent(BaseAgent):
                 errors=[str(e)],
             )
 
+    def _validate_path(self, file_path: Path, base_path: Path) -> Path:
+        """
+        Validate that a file path is safely within the base path.
+
+        Prevents path traversal attacks where malicious paths like
+        "../../../etc/passwd" could write outside the intended directory.
+
+        Args:
+            file_path: The path to validate
+            base_path: The base directory that should contain file_path
+
+        Returns:
+            The resolved absolute path if valid
+
+        Raises:
+            PathTraversalError: If path traversal is detected
+        """
+        # Resolve both paths to absolute paths
+        resolved_base = base_path.resolve()
+        resolved_file = (base_path / file_path).resolve()
+
+        # Check that the resolved file path starts with the base path
+        try:
+            resolved_file.relative_to(resolved_base)
+        except ValueError:
+            logger.warning(
+                f"Path traversal attempt detected: {file_path} escapes {base_path}"
+            )
+            raise PathTraversalError(
+                f"Path '{file_path}' attempts to escape base directory '{base_path}'"
+            )
+
+        return resolved_file
+
     async def _write_files(
         self,
         files: list[dict[str, Any]],
         base_path: Path,
     ) -> dict[str, Any]:
-        """Write generated files to the filesystem."""
+        """Write generated files to the filesystem with path traversal protection."""
         errors = []
 
         for file_info in files:
-            file_path = base_path / file_info.get("path", "")
+            relative_path = file_info.get("path", "")
             content = file_info.get("content", "")
 
             try:
+                # Validate path is safe (prevents path traversal attacks)
+                file_path = self._validate_path(Path(relative_path), base_path)
+
                 # Create parent directories
                 file_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -176,10 +221,14 @@ class ExecutorAgent(BaseAgent):
                     f.write(content)
 
                 self.written_files.append(str(file_path))
+                logger.info(f"Wrote file: {file_path}")
                 self.log(f"Wrote: {file_path.name}")
 
+            except PathTraversalError as e:
+                errors.append(str(e))
             except Exception as e:
-                errors.append(f"Failed to write {file_path}: {e}")
+                errors.append(f"Failed to write {relative_path}: {e}")
+                logger.error(f"Failed to write {relative_path}: {e}")
 
         return {
             "success": len(errors) == 0,

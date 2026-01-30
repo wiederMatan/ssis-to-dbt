@@ -6,6 +6,7 @@ and extracts connection managers, variables, tasks, and data flow components.
 """
 
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -14,6 +15,8 @@ from pathlib import Path
 from lxml import etree
 from rich.console import Console
 from rich.table import Table
+
+logger = logging.getLogger(__name__)
 
 # Secure XML parser configuration to prevent XXE attacks
 def _create_secure_parser() -> etree.XMLParser:
@@ -85,6 +88,7 @@ class SSISParser:
         directory = Path(directory)
         dtsx_files = list(directory.glob("**/*.dtsx"))
 
+        logger.info(f"Found {len(dtsx_files)} SSIS packages in {directory}")
         if self.verbose:
             console.print(f"[bold blue]Found {len(dtsx_files)} SSIS packages[/bold blue]")
             for f in dtsx_files:
@@ -93,11 +97,14 @@ class SSISParser:
 
         for dtsx_file in dtsx_files:
             try:
+                logger.debug(f"Parsing package: {dtsx_file}")
                 package = self.parse_package(dtsx_file)
                 self.packages.append(package)
+                logger.info(f"Successfully parsed: {package.name}")
                 if self.verbose:
                     console.print(f"[green]✓ Parsed: {package.name}[/green]")
             except Exception as e:
+                logger.error(f"Error parsing {dtsx_file}: {e}", exc_info=True)
                 console.print(f"[red]✗ Error parsing {dtsx_file}: {e}[/red]")
 
         return self.packages

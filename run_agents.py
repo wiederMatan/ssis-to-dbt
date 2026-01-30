@@ -12,12 +12,16 @@ Usage:
 
 import argparse
 import asyncio
+import logging
 import sys
 from pathlib import Path
 
 from rich.console import Console
 
+from src.logging_config import setup_logging, get_logger
+
 console = Console()
+logger = get_logger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -145,6 +149,13 @@ async def main() -> int:
     """Main entry point."""
     args = parse_args()
 
+    # Setup logging based on verbosity
+    log_level = "DEBUG" if args.verbose and not args.quiet else "INFO"
+    if args.quiet:
+        log_level = "WARNING"
+    setup_logging(level=log_level, log_dir=str(Path(args.output) / "logs"))
+    logger.info("SSIS-to-dbt Migration Pipeline starting")
+
     # Handle list runs
     if args.list_runs:
         list_previous_runs(args.output)
@@ -204,10 +215,12 @@ async def main() -> int:
             return 1
 
     except KeyboardInterrupt:
+        logger.warning("Migration cancelled by user")
         console.print("\n[yellow]Migration cancelled by user[/yellow]")
         return 130
 
     except Exception as e:
+        logger.exception("Migration failed with error")
         console.print(f"\n[red]Migration failed: {e}[/red]")
         if args.verbose:
             import traceback
