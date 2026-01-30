@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { Terminal, Pause, Play, Filter, Trash2 } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Terminal, Pause, Play, Filter, Trash2, Download } from 'lucide-react';
 import { cn } from '../lib/utils';
 import type { LogEntry } from '../types';
 
@@ -13,17 +13,54 @@ type LogLevel = 'all' | 'info' | 'warn' | 'error' | 'success';
 export function LiveLogs({ logs, onClear }: LiveLogsProps) {
   const [isPaused, setIsPaused] = useState(false);
   const [filter, setFilter] = useState<LogLevel>('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const filteredLogs = logs.filter(log =>
-    filter === 'all' || log.level === filter
-  );
+  const filteredLogs = logs.filter(log => {
+    const matchesLevel = filter === 'all' || log.level === filter;
+    const matchesSearch = searchTerm === '' ||
+      log.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (log.source && log.source.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesLevel && matchesSearch;
+  });
 
   useEffect(() => {
     if (!isPaused && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [filteredLogs, isPaused]);
+
+  // Keyboard shortcuts
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.ctrlKey && e.key === 'k') {
+      e.preventDefault();
+      onClear?.();
+    }
+    if (e.key === ' ' && document.activeElement?.closest('.live-logs')) {
+      e.preventDefault();
+      setIsPaused(prev => !prev);
+    }
+  }, [onClear]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
+  // Export logs
+  const handleExport = () => {
+    const logText = filteredLogs
+      .map(log => `[${log.timestamp}] [${log.level.toUpperCase()}] ${log.source ? `[${log.source}] ` : ''}${log.message}`)
+      .join('\n');
+
+    const blob = new Blob([logText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `migration-logs-${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const levelColors: Record<LogEntry['level'], string> = {
     info: 'log-info',
@@ -32,35 +69,57 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
     success: 'log-success',
   };
 
-  const levelBadge: Record<LogEntry['level'], { text: string; bg: string }> = {
-    info: { text: 'INFO', bg: 'bg-blue-500/20 text-blue-400' },
-    warn: { text: 'WARN', bg: 'bg-yellow-500/20 text-yellow-400' },
-    error: { text: 'ERROR', bg: 'bg-red-500/20 text-red-400' },
-    success: { text: 'OK', bg: 'bg-green-500/20 text-green-400' },
+  const levelBadge: Record<LogEntry['level'], { text: string; className: string }> = {
+    info: { text: 'INFO', className: 'status-info' },
+    warn: { text: 'WARN', className: 'status-warning' },
+    error: { text: 'ERROR', className: 'status-failed' },
+    success: { text: 'OK', className: 'status-passed' },
   };
 
   return (
-    <div className="flex flex-col h-full border rounded-lg overflow-hidden">
+    <div className="live-logs flex flex-col h-full border rounded-lg overflow-hidden" role="log" aria-label="Live migration logs">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b bg-muted/30">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between p-3 border-b bg-muted/30 gap-2">
         <div className="flex items-center gap-2">
-          <Terminal className="h-4 w-4" />
+          <Terminal className="h-4 w-4" aria-hidden="true" />
           <span className="font-medium">Live Logs</span>
-          <span className="text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground" aria-live="polite">
             ({filteredLogs.length} entries)
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Search */}
+          <div className="relative">
+            <input
+              type="search"
+              placeholder="Search logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-32 sm:w-40 text-xs bg-background border rounded px-2 py-1 pr-6"
+              aria-label="Search logs"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => setSearchTerm('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted rounded"
+                aria-label="Clear search"
+              >
+                <span className="text-xs text-muted-foreground">×</span>
+              </button>
+            )}
+          </div>
+
           {/* Filter */}
           <div className="flex items-center gap-1">
-            <Filter className="h-3 w-3 text-muted-foreground" />
+            <Filter className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
             <select
               value={filter}
               onChange={(e) => setFilter(e.target.value as LogLevel)}
-              className="text-xs bg-background border rounded px-2 py-1"
+              className="custom-select text-xs bg-background border rounded px-2 py-1"
+              aria-label="Filter log level"
             >
-              <option value="all">All</option>
+              <option value="all">All Levels</option>
               <option value="info">Info</option>
               <option value="warn">Warnings</option>
               <option value="error">Errors</option>
@@ -68,57 +127,83 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
             </select>
           </div>
 
-          {/* Pause/Play */}
-          <button
-            onClick={() => setIsPaused(!isPaused)}
-            className={cn(
-              "p-1 rounded hover:bg-muted",
-              isPaused && "text-yellow-500"
-            )}
-            title={isPaused ? "Resume auto-scroll" : "Pause auto-scroll"}
-          >
-            {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-          </button>
-
-          {/* Clear */}
-          {onClear && (
+          {/* Action buttons */}
+          <div className="flex items-center gap-1" role="toolbar" aria-label="Log actions">
+            {/* Export */}
             <button
-              onClick={onClear}
-              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-              title="Clear logs"
+              onClick={handleExport}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title="Export logs"
+              aria-label="Export logs to file"
             >
-              <Trash2 className="h-4 w-4" />
+              <Download className="h-4 w-4" />
             </button>
-          )}
+
+            {/* Pause/Play */}
+            <button
+              onClick={() => setIsPaused(!isPaused)}
+              className={cn(
+                "p-1 rounded hover:bg-muted transition-colors",
+                isPaused && "text-yellow-500"
+              )}
+              title={isPaused ? "Resume auto-scroll (Space)" : "Pause auto-scroll (Space)"}
+              aria-label={isPaused ? "Resume auto-scroll" : "Pause auto-scroll"}
+              aria-pressed={isPaused}
+            >
+              {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+            </button>
+
+            {/* Clear */}
+            {onClear && (
+              <button
+                onClick={onClear}
+                className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                title="Clear logs (Ctrl+K)"
+                aria-label="Clear all logs"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Log Content */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-auto p-3 bg-slate-950 terminal"
+        className="flex-1 overflow-auto p-3 terminal"
+        tabIndex={0}
+        role="region"
+        aria-label="Log entries"
       >
         {filteredLogs.length === 0 ? (
-          <div className="text-muted-foreground text-center py-8">
-            No logs to display
+          <div className="text-muted-foreground text-center py-8" role="status">
+            {logs.length === 0 ? 'No logs to display' : 'No logs match the current filter'}
           </div>
         ) : (
           <div className="space-y-1">
             {filteredLogs.map((log, idx) => (
-              <div key={idx} className="flex gap-2 text-slate-300">
-                <span className="text-slate-500 select-none">
+              <div
+                key={idx}
+                className="flex gap-2 text-[var(--color-terminal-fg)] hover:bg-white/5 px-1 -mx-1 rounded"
+                role="listitem"
+              >
+                <span className="text-muted-foreground select-none shrink-0" aria-hidden="true">
                   {log.timestamp}
                 </span>
-                <span className={cn(
-                  "px-1 rounded text-[10px] font-mono uppercase",
-                  levelBadge[log.level].bg
-                )}>
+                <span
+                  className={cn(
+                    "px-1 rounded text-[10px] font-mono uppercase shrink-0",
+                    levelBadge[log.level].className
+                  )}
+                  role="status"
+                >
                   {levelBadge[log.level].text}
                 </span>
                 {log.source && (
-                  <span className="text-slate-400">[{log.source}]</span>
+                  <span className="text-muted-foreground shrink-0">[{log.source}]</span>
                 )}
-                <span className={levelColors[log.level]}>{log.message}</span>
+                <span className={cn(levelColors[log.level], "break-all")}>{log.message}</span>
               </div>
             ))}
           </div>
@@ -127,8 +212,12 @@ export function LiveLogs({ logs, onClear }: LiveLogsProps) {
 
       {/* Status Bar */}
       {isPaused && (
-        <div className="px-3 py-1 bg-yellow-500/20 text-yellow-500 text-xs text-center">
-          Auto-scroll paused - Click play to resume
+        <div
+          className="px-3 py-1 status-warning text-xs text-center"
+          role="status"
+          aria-live="polite"
+        >
+          Auto-scroll paused - Press Space or click play to resume
         </div>
       )}
     </div>

@@ -27,6 +27,10 @@
   --color-warning: hsl(38 92% 50%);
   --color-error: hsl(0 72% 51%);
   --color-info: hsl(199 89% 48%);
+
+  /* Terminal colors */
+  --color-terminal-bg: hsl(222 47% 6%);
+  --color-terminal-fg: hsl(215 20% 75%);
 }
 
 * {
@@ -38,6 +42,37 @@ body {
   color: var(--color-foreground);
   margin: 0;
   min-height: 100vh;
+}
+
+/* Focus indicators for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* Skip to main content link for screen readers */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  padding: 8px 16px;
+  z-index: 100;
+  border-radius: 0 0 var(--radius) 0;
+  transition: top 0.2s;
+}
+
+.skip-link:focus {
+  top: 0;
 }
 
 /* Custom scrollbar */
@@ -65,9 +100,169 @@ body {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 12px;
   line-height: 1.5;
+  background-color: var(--color-terminal-bg);
 }
 
 .terminal .log-info { color: #60a5fa; }
 .terminal .log-warn { color: #fbbf24; }
 .terminal .log-error { color: #f87171; }
 .terminal .log-success { color: #34d399; }
+
+/* Code block with syntax highlighting */
+.code-block {
+  background-color: var(--color-terminal-bg);
+}
+
+/* SQL syntax highlighting */
+.syntax-keyword { color: #c586c0; font-weight: 500; }
+.syntax-function { color: #dcdcaa; }
+.syntax-string { color: #ce9178; }
+.syntax-number { color: #b5cea8; }
+.syntax-comment { color: #6a9955; font-style: italic; }
+.syntax-operator { color: #d4d4d4; }
+.syntax-variable { color: #9cdcfe; }
+.syntax-table { color: #4ec9b0; }
+
+/* Jinja template highlighting */
+.syntax-jinja-block { color: #569cd6; }
+.syntax-jinja-var { color: #4fc1ff; }
+
+/* Custom select styling */
+.custom-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+}
+
+/* Tooltip styles */
+.tooltip {
+  position: relative;
+}
+
+.tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--color-popover);
+  color: var(--color-popover-foreground);
+  font-size: 12px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  border: 1px solid var(--color-border);
+  z-index: 50;
+  margin-bottom: 4px;
+}
+
+.tooltip:hover::after,
+.tooltip:focus::after {
+  opacity: 1;
+}
+
+/* Responsive table wrapper */
+.table-responsive {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Mobile-friendly cards for table data */
+@media (max-width: 768px) {
+  .mobile-card-view {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .mobile-card-view table {
+    display: none;
+  }
+
+  .mobile-card {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    background: var(--color-card);
+  }
+}
+
+/* Sidebar collapse animation */
+.sidebar {
+  transition: width 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.sidebar.collapsed {
+  width: 64px;
+}
+
+.sidebar.collapsed .sidebar-text {
+  opacity: 0;
+  width: 0;
+  overflow: hidden;
+}
+
+/* Mobile overlay for sidebar */
+@media (max-width: 768px) {
+  .sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  .sidebar-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    transform: translateX(-100%);
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+}
+
+/* Keyboard navigation indicator */
+[data-keyboard-nav="true"] *:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Loading shimmer animation */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--color-muted) 25%,
+    color-mix(in srgb, var(--color-muted) 50%, transparent) 50%,
+    var(--color-muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Ensure sufficient color contrast for status badges */
+.status-passed { background: hsl(142 76% 20%); color: hsl(142 76% 70%); }
+.status-failed { background: hsl(0 72% 20%); color: hsl(0 72% 70%); }
+.status-warning { background: hsl(38 92% 20%); color: hsl(38 92% 65%); }
+.status-info { background: hsl(199 89% 20%); color: hsl(199 89% 70%); }
