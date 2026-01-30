@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "mssql": {
+      "command": "uvx",
+      "args": ["microsoft_sql_server_mcp"],
+      "env": {
+        "MSSQL_SERVER": "localhost",
+        "MSSQL_PORT": "1433",
+        "MSSQL_DATABASE": "SalesDB",
+        "MSSQL_USER": "sa",
+        "MSSQL_PASSWORD": "YourStrong!Passw0rd"
+      }
+    }
+  }
+}
