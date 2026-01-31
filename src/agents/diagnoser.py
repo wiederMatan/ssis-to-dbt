@@ -1,10 +1,38 @@
 """Diagnoser Agent - Analyzes validation failures and suggests fixes."""
 
+import re
 from typing import Any, Optional
 
 from .base import BaseAgent, AgentResult, AgentStatus
 from .context import MigrationContext
 from .validator import ValidationStatus
+
+# Import SQL identifier validation
+from src.parser.utils import validate_sql_identifier, sanitize_sql_identifier
+
+
+def safe_identifier(name: str) -> str:
+    """
+    Safely format an identifier for use in investigation queries.
+
+    Args:
+        name: The identifier to format
+
+    Returns:
+        Sanitized identifier or a placeholder if invalid
+    """
+    if not name:
+        return "[INVALID]"
+
+    # Try to sanitize the identifier
+    sanitized = sanitize_sql_identifier(name)
+
+    # Validate the result
+    if validate_sql_identifier(sanitized):
+        return f"[{sanitized}]"
+
+    # If still invalid, return a safe placeholder
+    return "[INVALID_IDENTIFIER]"
 
 
 class DiagnosisResult:
@@ -179,10 +207,11 @@ class DiagnoserAgent(BaseAgent):
                     "location": f"models/core/{model_name}.sql",
                     "priority": "high",
                 })
+                safe_model = safe_identifier(model_name)
                 diagnosis.investigation_queries.append(
                     f"-- Find missing records\n"
-                    f"SELECT * FROM legacy_table\n"
-                    f"WHERE id NOT IN (SELECT id FROM {model_name})"
+                    f"SELECT * FROM [legacy_table]\n"
+                    f"WHERE [id] NOT IN (SELECT [id] FROM {safe_model})"
                 )
             else:
                 diagnosis.root_cause = f"Extra rows: dbt has {dbt - legacy} more rows ({diff_pct:.1f}%)"
@@ -221,11 +250,12 @@ class DiagnoserAgent(BaseAgent):
                     "location": f"models/staging/stg_*__{model_name}.sql",
                     "priority": "high",
                 })
+                safe_model = safe_identifier(model_name)
                 diagnosis.investigation_queries.append(
                     f"-- Find duplicate keys\n"
-                    f"SELECT id, COUNT(*) AS cnt\n"
-                    f"FROM {model_name}\n"
-                    f"GROUP BY id HAVING COUNT(*) > 1"
+                    f"SELECT [id], COUNT(*) AS cnt\n"
+                    f"FROM {safe_model}\n"
+                    f"GROUP BY [id] HAVING COUNT(*) > 1"
                 )
                 diagnosis.can_auto_fix = True
 
@@ -251,12 +281,14 @@ class DiagnoserAgent(BaseAgent):
                 "location": f"models/core/{model_name}.sql",
                 "priority": "medium",
             })
+            safe_model = safe_identifier(model_name)
             for col, var in zip(cols, variances):
+                safe_col = safe_identifier(col)
                 diagnosis.investigation_queries.append(
                     f"-- Compare {col} values\n"
-                    f"SELECT 'legacy' AS src, SUM({col}) AS total FROM legacy_table\n"
+                    f"SELECT 'legacy' AS src, SUM({safe_col}) AS total FROM [legacy_table]\n"
                     f"UNION ALL\n"
-                    f"SELECT 'dbt' AS src, SUM({col}) AS total FROM {model_name}"
+                    f"SELECT 'dbt' AS src, SUM({safe_col}) AS total FROM {safe_model}"
                 )
 
         # Use LLM for deeper analysis if available

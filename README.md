@@ -8,7 +8,7 @@ An enterprise-grade, AI-powered migration framework that converts SQL Server Int
 ## Key Features
 
 - **Multi-Agent Pipeline** - Specialized agents for analysis, code generation, execution, validation, and diagnosis
-- **LLM-Enhanced Processing** - OpenAI GPT-4 integration for intelligent pattern detection and code generation
+- **Multi-Provider LLM** - OpenAI, Vertex AI (Gemini), and Ollama (Llama) with unified interface
 - **Advanced Memory System** - Short-term, long-term, semantic, episodic, and procedural memory stores
 - **Dynamic Tool Registry** - ReAct-pattern tool calling with automatic discovery
 - **Graph-Based Orchestration** - Parallel execution, conditional branching, and state checkpointing
@@ -307,6 +307,105 @@ Analyzes failures and suggests fixes:
 - **Output**: Diagnosis report, suggested remediations
 - **LLM**: Root cause analysis and fix generation
 
+## LLM Providers
+
+The framework supports multiple LLM providers with a unified interface. Choose the best option for your needs:
+
+### Supported Providers
+
+| Provider | Models | Best For |
+|----------|--------|----------|
+| **OpenAI** | GPT-4o, GPT-4, GPT-3.5 | Production, high accuracy |
+| **Vertex AI** | Gemini 2.0, Gemini 1.5 Pro/Flash | Google Cloud integration |
+| **Ollama** | Llama 3.3, CodeLlama, Mistral, Mixtral | Local/private, cost savings |
+
+### Quick Setup
+
+```bash
+# Option 1: OpenAI
+export OPENAI_API_KEY="sk-..."
+
+# Option 2: Google Vertex AI
+export GOOGLE_CLOUD_PROJECT="your-project-id"
+export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
+
+# Option 3: Ollama (local Llama)
+# Install: https://ollama.ai
+ollama pull llama3.1:70b
+ollama serve
+```
+
+### Usage Examples
+
+```python
+from src.agents.llm import create_llm_provider, LLMConfig, LLMProvider
+
+# Auto-detect from environment variables
+provider = create_llm_provider()
+
+# Explicitly use OpenAI GPT-4o
+provider = create_llm_provider(LLMConfig(
+    provider=LLMProvider.OPENAI,
+    model="gpt-4o",
+    temperature=0.2
+))
+
+# Use Google Vertex AI with Gemini
+provider = create_llm_provider(LLMConfig(
+    provider=LLMProvider.VERTEX_AI,
+    model="gemini-1.5-pro",
+    project_id="my-gcp-project",
+    location="us-central1"
+))
+
+# Use local Llama via Ollama
+provider = create_llm_provider(LLMConfig(
+    provider=LLMProvider.OLLAMA,
+    model="llama3.1:70b",
+    ollama_host="http://localhost:11434"
+))
+
+# Generate completions
+response = await provider.complete_simple(
+    system_prompt="You are a SQL expert.",
+    user_prompt="Explain this query: SELECT * FROM users"
+)
+
+# JSON mode (structured output)
+result = await provider.complete_json_simple(
+    system_prompt="Analyze SQL and return JSON.",
+    user_prompt="SELECT * FROM orders WHERE status = 'pending'"
+)
+
+# Streaming
+async for token in provider.stream(messages):
+    print(token, end="")
+```
+
+### Model Recommendations
+
+| Use Case | OpenAI | Vertex AI | Ollama |
+|----------|--------|-----------|--------|
+| SQL Analysis | gpt-4o | gemini-1.5-pro | llama3.1:70b |
+| Code Generation | gpt-4o | gemini-1.5-pro | codellama:34b |
+| Fast/Cheap | gpt-4o-mini | gemini-1.5-flash | llama3.1:8b |
+| Privacy-Critical | - | - | Any local model |
+
+### Check Available Providers
+
+```python
+from src.agents.llm import get_available_providers, list_models, LLMProvider
+
+# Check what's available
+available = get_available_providers()
+print(available)
+# {'openai': True, 'vertex_ai': False, 'ollama': True}
+
+# List recommended models
+models = list_models(LLMProvider.OLLAMA)
+# ['llama3.3:70b', 'llama3.1:70b', 'codellama:34b', ...]
+```
+
 ## Configuration
 
 ### Agent Configuration (`config/agents.yaml`)
@@ -440,8 +539,21 @@ python3 -m src.parser.ssis_parser ./samples/ssis_packages -o ./output -v
 ## Environment Variables
 
 ```bash
-# LLM Configuration
+# LLM Configuration - Choose one provider:
+
+# Option 1: OpenAI
 OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o  # Optional, defaults to gpt-4o
+
+# Option 2: Google Vertex AI
+GOOGLE_CLOUD_PROJECT=your-project-id
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+VERTEX_MODEL=gemini-1.5-pro  # Optional
+VERTEX_LOCATION=us-central1  # Optional
+
+# Option 3: Ollama (Local Llama)
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=llama3.1:70b  # Or: codellama:34b, mixtral, etc.
 
 # Source Database
 SOURCE_DB_HOST=localhost
