@@ -1,0 +1,37 @@
+{
+  "run_id": "20260130_165144",
+  "started_at": "2026-01-30T16:51:44.603543",
+  "input_dir": "./samples/ssis_packages",
+  "output_dir": "./output",
+  "dbt_project_path": "./dbt_project",
+  "config_path": null,
+  "current_phase": "failed",
+  "phase_history": [
+    {
+      "from_phase": "initialized",
+      "to_phase": "analyzing",
+      "timestamp": "2026-01-30T16:51:44.604415",
+      "metadata": {}
+    },
+    {
+      "from_phase": "analyzing",
+      "to_phase": "failed",
+      "timestamp": "2026-01-30T16:51:44.612286",
+      "metadata": {}
+    }
+  ],
+  "analysis_result": null,
+  "build_result": null,
+  "execution_result": null,
+  "validation_result": null,
+  "diagnosis_result": null,
+  "pending_approvals": [],
+  "approval_responses": {},
+  "iteration_count": 0,
+  "max_iterations": 3,
+  "feedback_history": [],
+  "errors": [
+    "'ParsingResult' object has no attribute 'validation_log'"
+  ],
+  "warnings": []
+}
