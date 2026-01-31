@@ -6,7 +6,9 @@ Supports Llama, Mistral, CodeLlama, and other models via Ollama.
 
 import json
 import aiohttp
+import re
 from typing import Any, Optional, AsyncIterator
+from urllib.parse import urlparse
 
 from .base import (
     BaseLLMProvider,
@@ -17,6 +19,69 @@ from .base import (
     Message,
     ModelCapability,
 )
+
+
+# Allowed hosts for Ollama connections (security: prevent SSRF)
+ALLOWED_OLLAMA_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "host.docker.internal",  # Docker
+}
+
+# Pattern for private IP ranges (also allowed)
+PRIVATE_IP_PATTERN = re.compile(
+    r'^('
+    r'10\.\d{1,3}\.\d{1,3}\.\d{1,3}|'  # 10.0.0.0/8
+    r'172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|'  # 172.16.0.0/12
+    r'192\.168\.\d{1,3}\.\d{1,3}'  # 192.168.0.0/16
+    r')$'
+)
+
+
+def validate_ollama_url(url: str) -> str:
+    """
+    Validate Ollama URL to prevent SSRF attacks.
+
+    Only allows localhost, private IPs, and explicitly allowed hosts.
+
+    Args:
+        url: The Ollama host URL to validate
+
+    Returns:
+        The validated URL
+
+    Raises:
+        ValueError: If the URL is not allowed
+    """
+    parsed = urlparse(url)
+
+    # Only allow http/https schemes
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Invalid URL scheme: {parsed.scheme}. Only http/https allowed.")
+
+    hostname = parsed.hostname or ""
+
+    # Check against allowed hosts
+    if hostname in ALLOWED_OLLAMA_HOSTS:
+        return url
+
+    # Check against private IP ranges
+    if PRIVATE_IP_PATTERN.match(hostname):
+        return url
+
+    # Check for custom allowed hosts from environment
+    import os
+    custom_hosts = os.getenv("OLLAMA_ALLOWED_HOSTS", "").split(",")
+    custom_hosts = [h.strip() for h in custom_hosts if h.strip()]
+    if hostname in custom_hosts:
+        return url
+
+    raise ValueError(
+        f"Ollama host '{hostname}' is not allowed. "
+        f"Only localhost, private IPs, and hosts in OLLAMA_ALLOWED_HOSTS are permitted. "
+        f"This restriction prevents SSRF attacks."
+    )
 
 
 # Common Ollama model names
@@ -74,7 +139,10 @@ class OllamaProvider(StreamingLLMProvider):
         super().__init__(config)
 
         import os
-        self._host = config.ollama_host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        raw_host = config.ollama_host or os.getenv("OLLAMA_HOST", "http://localhost:11434")
+
+        # Validate URL to prevent SSRF attacks
+        self._host = validate_ollama_url(raw_host)
         self._model = OLLAMA_MODELS.get(config.model, config.model)
 
     def _convert_messages(self, messages: list[Message]) -> list[dict]:

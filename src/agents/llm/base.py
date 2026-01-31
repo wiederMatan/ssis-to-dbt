@@ -79,8 +79,8 @@ class LLMConfig(BaseModel):
     timeout_seconds: float = 60.0
     max_retries: int = 3
 
-    # Provider-specific settings
-    api_key: Optional[str] = None
+    # Provider-specific settings (SECURITY: api_key excluded from repr/str)
+    api_key: Optional[str] = Field(default=None, repr=False)
     api_base: Optional[str] = None
 
     # Vertex AI specific
@@ -92,6 +92,18 @@ class LLMConfig(BaseModel):
 
     class Config:
         use_enum_values = True
+
+    def __repr__(self) -> str:
+        """Safe repr that doesn't expose API key."""
+        return (
+            f"LLMConfig(provider={self.provider!r}, model={self.model!r}, "
+            f"temperature={self.temperature}, max_tokens={self.max_tokens}, "
+            f"api_key={'***' if self.api_key else None})"
+        )
+
+    def __str__(self) -> str:
+        """Safe string representation."""
+        return self.__repr__()
 
 
 class BaseLLMProvider(ABC):
