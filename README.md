@@ -3,557 +3,237 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-An enterprise-grade, AI-powered migration framework that converts SQL Server Integration Services (SSIS) packages to dbt models. Built with a sophisticated multi-agent architecture featuring advanced memory management, dynamic tool orchestration, and comprehensive observability.
+**Say goodbye to manual SSIS conversions.** This tool automatically transforms your SQL Server Integration Services packages into clean, maintainable dbt models—so you can focus on building, not migrating.
 
-## Key Features
+---
 
-- **Multi-Agent Pipeline** - Specialized agents for analysis, code generation, execution, validation, and diagnosis
-- **Multi-Provider LLM** - OpenAI, Vertex AI (Gemini), and Ollama (Llama) with unified interface
-- **Advanced Memory System** - Short-term, long-term, semantic, episodic, and procedural memory stores
-- **Dynamic Tool Registry** - ReAct-pattern tool calling with automatic discovery
-- **Graph-Based Orchestration** - Parallel execution, conditional branching, and state checkpointing
-- **Lifecycle Hooks** - Extensible pre/post execution, error handling, and custom event hooks
-- **Full Observability** - Distributed tracing, metrics collection, and structured logging
-- **Human-in-the-Loop** - Approval gates for critical operations with rich CLI interface
+## What Does It Do?
 
-## Quick Start
+If you've ever stared at hundreds of SSIS packages wondering how you'll ever migrate them to a modern data stack, this is for you.
+
+**In a nutshell:** Point it at your SSIS packages, and it generates ready-to-run dbt models complete with sources, staging layers, and documentation.
+
+| Your Input | What You Get |
+|------------|--------------|
+| `.dtsx` SSIS packages | SQL models (`stg_*.sql`, `fct_*.sql`, `dim_*.sql`) |
+| Complex data flows | Clean `ref()` and `source()` relationships |
+| Lookup transforms | Proper SQL JOINs |
+| SSIS expressions | Translated SQL expressions |
+
+---
+
+## Getting Started
+
+### 1. Install
 
 ```bash
-# Clone and install
 git clone https://github.com/wiederMatan/ssis-to-dbt.git
 cd ssis-to-dbt
 pip install -r requirements.txt
+```
 
-# Set up environment (optional, for LLM features)
+### 2. Run Your First Migration
+
+```bash
+# Basic usage - just point to your SSIS packages folder
+python run_agents.py ./your_ssis_packages --output ./output
+
+# Want AI-assisted analysis? Add your API key
 export OPENAI_API_KEY="your-api-key"
-
-# Run the migration pipeline
-python run_agents.py ./samples/ssis_packages --output ./output
-
-# Or with auto-approval for CI/CD
-python run_agents.py ./samples/ssis_packages --auto-approve
+python run_agents.py ./your_ssis_packages --output ./output
 ```
 
-## Architecture Overview
+### 3. Check Your Results
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    SSIS-to-dbt Migration Factory                     │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐              │
-│  │  Analyzer   │───▶│   Builder   │───▶│  Executor   │              │
-│  │   Agent     │    │   Agent     │    │   Agent     │              │
-│  └─────────────┘    └─────────────┘    └─────────────┘              │
-│         │                                      │                     │
-│         │                                      ▼                     │
-│         │                              ┌─────────────┐              │
-│         │                              │  Validator  │              │
-│         │                              │   Agent     │              │
-│         │                              └─────────────┘              │
-│         │                                      │                     │
-│         │         ┌─────────────┐              │                     │
-│         └────────▶│  Diagnoser  │◀─────────────┘                    │
-│                   │   Agent     │     (on failure)                  │
-│                   └─────────────┘                                    │
-│                                                                      │
-├─────────────────────────────────────────────────────────────────────┤
-│                        Core Framework                                │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
-│  │  Tools   │ │  Memory  │ │  Hooks   │ │  Events  │ │ Tracing  │  │
-│  │ Registry │ │ Manager  │ │ Manager  │ │   Bus    │ │ & Metrics│  │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
+Your generated dbt project appears in the output folder:
+- `models/sources/` — Source definitions
+- `models/staging/` — Staging models from data flows
+- `models/core/` — Fact and dimension tables
+
+Then just run dbt:
+```bash
+cd dbt_project
+dbt deps && dbt run
 ```
 
-## Agent Framework
+That's it! You're migrated.
 
-### Core Components
+---
 
-#### 1. Tool Registry
+## How It Works
 
-Dynamic tool management with ReAct-pattern execution:
+The migration runs through a pipeline of specialized agents, each handling one part of the job:
 
-```python
-from src.agents.core import ToolRegistry, tool, ToolCategory
-
-registry = ToolRegistry()
-
-# Register tools using decorators
-@tool(
-    name="analyze_sql",
-    category=ToolCategory.DATABASE,
-    description="Analyze SQL statement structure"
-)
-async def analyze_sql(sql: str) -> dict:
-    # Tool implementation
-    return {"tables": [...], "joins": [...]}
-
-registry.register(analyze_sql)
-
-# Execute tools
-result = await registry.execute("analyze_sql", agent_id="analyzer", sql="SELECT ...")
+```
+   Your SSIS         Analyzer        Builder         Executor        Validator
+   Packages    --->   Agent    --->   Agent    --->   Agent    --->   Agent
+                        |                                               |
+                        |              Diagnoser                        |
+                        +------------->  Agent  <-----------------------+
+                                     (if needed)
 ```
 
-#### 2. Memory Manager
+**Analyzer** reads your SSIS packages and figures out what's what—tables, transforms, dependencies.
 
-Multi-level memory system inspired by cognitive architectures:
+**Builder** generates the dbt models, choosing the right patterns (staging vs. core, fact vs. dimension).
 
-```python
-from src.agents.core import MemoryManager, MemoryType, MemoryPriority
-from pathlib import Path
+**Executor** writes the files and optionally runs dbt commands.
 
-memory = MemoryManager(storage_path=Path("./memory"))
+**Validator** checks that the output matches expectations.
 
-# Short-term memory (conversation context)
-await memory.store(
-    content={"user_query": "migrate orders table"},
-    memory_type=MemoryType.SHORT_TERM,
-    ttl_seconds=3600
-)
+**Diagnoser** jumps in if something goes wrong, analyzes the issue, and suggests fixes.
 
-# Long-term memory (persistent facts)
-await memory.store(
-    content="Customer table has SCD Type 2",
-    memory_type=MemoryType.LONG_TERM,
-    priority=MemoryPriority.HIGH,
-    tags=["schema", "scd"]
-)
+---
 
-# Semantic memory (knowledge)
-await memory.semantic.store_fact(
-    fact_id="dt_wstr",
-    fact="DT_WSTR maps to NVARCHAR in SQL Server",
-    confidence=1.0
-)
+## Configuration Options
 
-# Episodic memory (past experiences)
-await memory.episodic.start_episode("migration_001", {"package": "orders.dtsx"})
-await memory.episodic.record_event("analysis", {"tables": 5})
-await memory.episodic.end_episode(success=True, summary="Migration completed")
-
-# Search across memory types
-results = await memory.search("orders table", limit=10)
-```
-
-#### 3. Hook System
-
-Extensible lifecycle management:
-
-```python
-from src.agents.core import HookManager, HookType, before_execute, after_execute
-
-hooks = HookManager()
-
-# Register hooks using decorators
-@before_execute()
-async def validate_input(context):
-    if not context.data.get("packages"):
-        context.should_continue = False
-    return context
-
-@after_execute()
-async def log_result(context):
-    print(f"Agent {context.agent_name} completed")
-    return context
-
-# Or register programmatically
-hooks.register(
-    name="audit_log",
-    hook_type=HookType.AFTER_EXECUTE,
-    handler=lambda ctx: log_to_audit(ctx)
-)
-
-# Trigger hooks
-context = await hooks.trigger(
-    HookType.BEFORE_EXECUTE,
-    agent_name="Analyzer",
-    data={"packages": [...]}
-)
-```
-
-#### 4. Event Bus
-
-Pub/sub messaging for agent communication:
-
-```python
-from src.agents.core import EventBus, EventType
-
-bus = EventBus()
-
-# Subscribe to events
-bus.subscribe(EventType.AGENT_COMPLETED, lambda e: print(f"Agent done: {e.source}"))
-
-# Subscribe with filter
-bus.subscribe(
-    EventType.VALIDATION_FAILED,
-    handler=lambda e: alert_team(e),
-    filter_fn=lambda e: e.data.get("severity") == "critical"
-)
-
-# Emit events
-await bus.emit(
-    EventType.AGENT_COMPLETED,
-    source="AnalyzerAgent",
-    data={"packages_analyzed": 5}
-)
-```
-
-#### 5. Distributed Tracing
-
-OpenTelemetry-compatible observability:
-
-```python
-from src.agents.core import Tracer, SpanKind, FileExporter
-from pathlib import Path
-
-tracer = Tracer(
-    service_name="ssis-to-dbt",
-    exporters=[FileExporter(Path("./traces.json"))]
-)
-
-# Create spans
-async with tracer.async_span("analyze_package", kind=SpanKind.INTERNAL) as span:
-    span.set_attribute("package.name", "orders.dtsx")
-    result = await analyze_package(package)
-    span.add_event("analysis_complete", {"tables": len(result.tables)})
-
-# Or use decorator
-@tracer.trace("process_dataflow")
-async def process_dataflow(task):
-    ...
-```
-
-#### 6. Graph-Based Orchestration
-
-LangGraph-inspired workflow execution:
-
-```python
-from src.agents.core import StateGraph, GraphState, EdgeCondition
-
-# Define the workflow graph
-graph = StateGraph("migration_pipeline")
-
-# Add nodes (agents)
-graph.add_node("analyze", analyzer_func)
-graph.add_node("build", builder_func)
-graph.add_node("validate", validator_func)
-graph.add_node("diagnose", diagnoser_func)
-
-# Add edges with conditions
-graph.add_edge("analyze", "build", condition=EdgeCondition.ON_SUCCESS)
-graph.add_edge("build", "validate")
-graph.add_conditional_edges(
-    "validate",
-    conditions={
-        "diagnose": lambda s: not s.get("validation_passed"),
-    },
-    default="complete"
-)
-
-# Set entry and exit points
-graph.set_entry_point("analyze")
-graph.set_finish_point("complete")
-
-# Execute with parallel support
-result = await graph.execute(
-    initial_state={"packages": [...]},
-    max_parallel=3  # Run up to 3 nodes in parallel
-)
-```
-
-## Migration Agents
-
-### 1. AnalyzerAgent
-
-Parses SSIS packages and extracts metadata:
-
-- **Input**: SSIS package paths
-- **Output**: Package analysis, dependency graphs, load patterns
-- **Tools**: SSIS parser, SQL analyzer, pattern detector
-- **LLM**: Optional boost for complex SQL analysis
-
-### 2. BuilderAgent
-
-Generates dbt models from analysis:
-
-- **Input**: Analysis results
-- **Output**: SQL models, YAML schemas, source definitions
-- **Tools**: Template generator, expression converter
-- **LLM**: Optional code generation enhancement
-
-### 3. ExecutorAgent
-
-Writes files and runs dbt commands:
-
-- **Input**: Generated files
-- **Output**: Execution results, dbt run status
-- **Requires**: Human approval before writing
-- **Tools**: File writer, dbt runner
-
-### 4. ValidatorAgent
-
-Validates dbt output against source data:
-
-- **Input**: Model mappings, DB connections
-- **Output**: Validation report
-- **Checks**: Row counts, primary keys, checksums
-
-### 5. DiagnoserAgent
-
-Analyzes failures and suggests fixes:
-
-- **Input**: Validation failures
-- **Output**: Diagnosis report, suggested remediations
-- **LLM**: Root cause analysis and fix generation
-
-## LLM Providers
-
-The framework supports multiple LLM providers with a unified interface. Choose the best option for your needs:
-
-### Supported Providers
-
-| Provider | Models | Best For |
-|----------|--------|----------|
-| **OpenAI** | GPT-4o, GPT-4, GPT-3.5 | Production, high accuracy |
-| **Vertex AI** | Gemini 2.0, Gemini 1.5 Pro/Flash | Google Cloud integration |
-| **Ollama** | Llama 3.3, CodeLlama, Mistral, Mixtral | Local/private, cost savings |
-
-### Quick Setup
+### Command Line
 
 ```bash
-# Option 1: OpenAI
-export OPENAI_API_KEY="sk-..."
-
-# Option 2: Google Vertex AI
-export GOOGLE_CLOUD_PROJECT="your-project-id"
-export GOOGLE_APPLICATION_CREDENTIALS="/path/to/service-account.json"
-
-# Option 3: Ollama (local Llama)
-# Install: https://ollama.ai
-ollama pull llama3.1:70b
-ollama serve
-```
-
-### Usage Examples
-
-```python
-from src.agents.llm import create_llm_provider, LLMConfig, LLMProvider
-
-# Auto-detect from environment variables
-provider = create_llm_provider()
-
-# Explicitly use OpenAI GPT-4o
-provider = create_llm_provider(LLMConfig(
-    provider=LLMProvider.OPENAI,
-    model="gpt-4o",
-    temperature=0.2
-))
-
-# Use Google Vertex AI with Gemini
-provider = create_llm_provider(LLMConfig(
-    provider=LLMProvider.VERTEX_AI,
-    model="gemini-1.5-pro",
-    project_id="my-gcp-project",
-    location="us-central1"
-))
-
-# Use local Llama via Ollama
-provider = create_llm_provider(LLMConfig(
-    provider=LLMProvider.OLLAMA,
-    model="llama3.1:70b",
-    ollama_host="http://localhost:11434"
-))
-
-# Generate completions
-response = await provider.complete_simple(
-    system_prompt="You are a SQL expert.",
-    user_prompt="Explain this query: SELECT * FROM users"
-)
-
-# JSON mode (structured output)
-result = await provider.complete_json_simple(
-    system_prompt="Analyze SQL and return JSON.",
-    user_prompt="SELECT * FROM orders WHERE status = 'pending'"
-)
-
-# Streaming
-async for token in provider.stream(messages):
-    print(token, end="")
-```
-
-### Model Recommendations
-
-| Use Case | OpenAI | Vertex AI | Ollama |
-|----------|--------|-----------|--------|
-| SQL Analysis | gpt-4o | gemini-1.5-pro | llama3.1:70b |
-| Code Generation | gpt-4o | gemini-1.5-pro | codellama:34b |
-| Fast/Cheap | gpt-4o-mini | gemini-1.5-flash | llama3.1:8b |
-| Privacy-Critical | - | - | Any local model |
-
-### Check Available Providers
-
-```python
-from src.agents.llm import get_available_providers, list_models, LLMProvider
-
-# Check what's available
-available = get_available_providers()
-print(available)
-# {'openai': True, 'vertex_ai': False, 'ollama': True}
-
-# List recommended models
-models = list_models(LLMProvider.OLLAMA)
-# ['llama3.3:70b', 'llama3.1:70b', 'codellama:34b', ...]
-```
-
-## Configuration
-
-### Agent Configuration (`config/agents.yaml`)
-
-```yaml
-agents:
-  analyzer:
-    detect_incremental: true
-    detect_scd: true
-    use_llm_analysis: true
-
-  builder:
-    generate_staging: true
-    generate_core: true
-    use_llm_generation: true
-
-  executor:
-    require_approval: true
-    write_backup: false
-    dbt_commands:
-      - deps
-      - run
-      - test
-
-  validator:
-    validate_row_counts: true
-    row_count_tolerance: 0.01
-    validate_primary_keys: true
-    validate_checksums: true
-
-  diagnoser:
-    max_retries: 3
-    generate_investigation_queries: true
-    use_llm_diagnosis: true
-
-llm:
-  provider: openai
-  model: gpt-4o
-  temperature: 0.2
-  max_tokens: 4096
-
-memory:
-  short_term_capacity: 100
-  short_term_ttl_seconds: 3600
-  long_term_storage: ./memory
-
-tracing:
-  enabled: true
-  sample_rate: 1.0
-  export_path: ./traces
-```
-
-## SSIS to dbt Mapping
-
-| SSIS Component | dbt Output | Notes |
-|----------------|------------|-------|
-| Data Flow Task | `stg_*.sql` | Staging model with source ref |
-| Execute SQL Task | `fct_*.sql` / `dim_*.sql` | Core model based on SQL pattern |
-| Lookup Transform | `LEFT JOIN ref()` | Converted to SQL join |
-| Derived Column | SQL expression | SSIS expressions mapped |
-| Conditional Split | `CASE WHEN` | Multiple outputs as CASE |
-| Merge Join | `JOIN` | Standard SQL join |
-| Sort | `ORDER BY` | In model or as macro |
-| Aggregate | `GROUP BY` | Aggregate model |
-
-## Project Structure
-
-```
-ssis-to-dbt/
-├── src/
-│   ├── agents/
-│   │   ├── core/              # Advanced agent framework
-│   │   │   ├── tools.py       # Tool registry and ReAct pattern
-│   │   │   ├── memory.py      # Multi-level memory system
-│   │   │   ├── hooks.py       # Lifecycle hooks
-│   │   │   ├── events.py      # Event bus
-│   │   │   ├── tracing.py     # Distributed tracing
-│   │   │   ├── agent.py       # Advanced base agent
-│   │   │   └── graph.py       # Graph-based orchestration
-│   │   ├── analyzer.py        # SSIS analysis agent
-│   │   ├── builder.py         # dbt generation agent
-│   │   ├── executor.py        # Execution agent
-│   │   ├── validator.py       # Validation agent
-│   │   ├── diagnoser.py       # Diagnosis agent
-│   │   ├── orchestrator.py    # Pipeline orchestrator
-│   │   └── llm/               # LLM integration
-│   │       ├── openai_client.py
-│   │       └── prompts.py
-│   ├── parser/                # SSIS XML parsing
-│   │   ├── ssis_parser.py
-│   │   ├── models.py
-│   │   └── type_mappings.py
-│   ├── cli/                   # CLI and approval UI
-│   └── connections/           # Database connections
-├── dbt_project/
-│   └── models/
-│       ├── sources/           # src_*.yml
-│       ├── staging/           # stg_*.sql
-│       └── core/              # fct_*, dim_*, agg_*
-├── config/
-│   └── agents.yaml            # Agent configuration
-├── ui/                        # React dashboard
-├── tests/                     # Test suite
-└── output/                    # Generated files
-```
-
-## CLI Commands
-
-```bash
-# Basic migration
-python run_agents.py <input_dir> --output <output_dir>
-
-# With options
+# Full control
 python run_agents.py ./ssis_packages \
     --output ./output \
     --dbt-project ./dbt_project \
-    --auto-approve \
-    --no-llm \
-    --verbose
+    --auto-approve \      # Skip confirmation prompts (great for CI/CD)
+    --no-llm \            # Run without AI features
+    --verbose             # See what's happening
 
 # Resume a previous run
 python run_agents.py --resume <run_id>
 
-# List all runs
-python run_agents.py --list-runs
-
-# Parser only (without agents)
+# Just parse, don't generate
 python3 -m src.parser.ssis_parser ./samples/ssis_packages -o ./output -v
 ```
 
-## Environment Variables
+### AI Providers
+
+Pick your preferred AI backend—or skip AI entirely for deterministic parsing:
+
+| Provider | Setup | Best For |
+|----------|-------|----------|
+| **OpenAI** | `export OPENAI_API_KEY="sk-..."` | Production use, high accuracy |
+| **Google Vertex AI** | `export GOOGLE_CLOUD_PROJECT="..."` | GCP-native environments |
+| **Ollama** | `ollama serve` (local) | Privacy, cost savings |
+| **None** | `--no-llm` flag | Deterministic, no API needed |
+
+---
+
+## What Gets Converted?
+
+Here's how SSIS components map to dbt:
+
+| SSIS Component | dbt Output | How It's Handled |
+|----------------|------------|------------------|
+| Data Flow Task | `stg_*.sql` | Becomes a staging model |
+| Execute SQL Task | `fct_*.sql` or `dim_*.sql` | Core model based on the SQL |
+| Lookup Transform | `LEFT JOIN ref()` | Proper SQL join |
+| Derived Column | SQL expression | Expression translation |
+| Conditional Split | `CASE WHEN` | Multiple outputs as CASE |
+| Merge Join | `JOIN` | Standard SQL join |
+| Aggregate | `GROUP BY` | Aggregate model |
+
+### Type Mappings
+
+SSIS types are automatically converted:
+
+| SSIS | SQL Server |
+|------|------------|
+| DT_WSTR | NVARCHAR |
+| DT_STR | VARCHAR |
+| DT_I4 | INT |
+| DT_I8 | BIGINT |
+| DT_NUMERIC | NUMERIC |
+| DT_DBTIMESTAMP | DATETIME |
+| DT_BOOL | BIT |
+
+---
+
+## Project Layout
+
+```
+ssis-to-dbt/
+├── src/
+│   ├── agents/           # The smart bits - analysis, generation, validation
+│   │   ├── core/         # Framework internals (tools, memory, tracing)
+│   │   └── llm/          # AI provider integrations
+│   ├── parser/           # SSIS XML parsing logic
+│   └── cli/              # Command-line interface
+├── dbt_project/          # Your generated dbt project lands here
+│   └── models/
+│       ├── sources/      # src_*.yml
+│       ├── staging/      # stg_*.sql
+│       └── core/         # fct_*, dim_*, agg_*
+├── config/               # Configuration files
+├── output/               # Parsing reports and artifacts
+└── tests/                # Test suite
+```
+
+---
+
+## For Developers
+
+<details>
+<summary><strong>Extending the Framework</strong></summary>
+
+### Custom Tools
+
+```python
+from src.agents.core import ToolRegistry, tool, ToolCategory
+
+@tool(name="my_validator", category=ToolCategory.VALIDATION)
+async def my_validator(model_name: str) -> dict:
+    # Your validation logic here
+    return {"passed": True}
+
+registry = ToolRegistry()
+registry.register(my_validator)
+```
+
+### Custom Hooks
+
+```python
+from src.agents.core import HookManager, HookType
+
+async def notify_on_complete(context):
+    print(f"Done: {context.agent_name}")
+    return context
+
+hooks = HookManager()
+hooks.register("notifier", HookType.AFTER_EXECUTE, notify_on_complete)
+```
+
+### Memory System
+
+The framework includes multi-level memory (short-term, long-term, semantic, episodic) for complex migrations that need context across steps.
+
+### Tracing
+
+OpenTelemetry-compatible tracing built in—great for debugging and monitoring production runs.
+
+</details>
+
+<details>
+<summary><strong>Running Tests</strong></summary>
 
 ```bash
-# LLM Configuration - Choose one provider:
+# All tests
+python3 -m pytest tests/ -v
 
-# Option 1: OpenAI
+# With coverage
+python3 -m pytest tests/ --cov=src --cov-report=html
+```
+
+</details>
+
+<details>
+<summary><strong>Environment Variables Reference</strong></summary>
+
+```bash
+# AI Providers (pick one)
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o  # Optional, defaults to gpt-4o
-
-# Option 2: Google Vertex AI
-GOOGLE_CLOUD_PROJECT=your-project-id
-GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
-VERTEX_MODEL=gemini-1.5-pro  # Optional
-VERTEX_LOCATION=us-central1  # Optional
-
-# Option 3: Ollama (Local Llama)
+GOOGLE_CLOUD_PROJECT=your-project
+GOOGLE_APPLICATION_CREDENTIALS=/path/to/creds.json
 OLLAMA_HOST=http://localhost:11434
-OLLAMA_MODEL=llama3.1:70b  # Or: codellama:34b, mixtral, etc.
 
 # Source Database
 SOURCE_DB_HOST=localhost
@@ -570,96 +250,29 @@ TARGET_DB_USER=user
 TARGET_DB_PASSWORD=password
 ```
 
-## Advanced Usage
+</details>
 
-### Custom Tool Registration
-
-```python
-from src.agents.core import Tool, ToolRegistry, ToolCategory
-
-class CustomValidationTool(Tool):
-    name = "custom_validator"
-    description = "Custom validation logic"
-    category = ToolCategory.VALIDATION
-
-    async def execute(self, model_name: str, rules: list) -> dict:
-        # Custom validation implementation
-        return {"passed": True, "violations": []}
-
-registry = ToolRegistry()
-registry.register(CustomValidationTool())
-```
-
-### Custom Hooks
-
-```python
-from src.agents.core import HookManager, HookType
-
-async def slack_notification_hook(context):
-    """Send Slack notification on completion."""
-    if context.hook_type == HookType.AFTER_EXECUTE:
-        await send_slack_message(
-            f"Agent {context.agent_name} completed",
-            context.data
-        )
-    return context
-
-hooks = HookManager()
-hooks.register(
-    name="slack_notify",
-    hook_type=HookType.AFTER_EXECUTE,
-    handler=slack_notification_hook
-)
-```
-
-### Custom Memory Store
-
-```python
-from src.agents.core.memory import MemoryStore, MemoryEntry
-
-class RedisMemoryStore(MemoryStore):
-    """Redis-backed memory store for distributed deployments."""
-
-    def __init__(self, redis_client):
-        self.redis = redis_client
-
-    async def store(self, entry: MemoryEntry) -> None:
-        await self.redis.set(entry.id, entry.to_dict())
-
-    async def retrieve(self, id: str) -> MemoryEntry:
-        data = await self.redis.get(id)
-        return MemoryEntry.from_dict(data)
-```
-
-## Testing
-
-```bash
-# Run all tests
-python3 -m pytest tests/ -v
-
-# Run with coverage
-python3 -m pytest tests/ --cov=src --cov-report=html
-
-# Run specific test file
-python3 -m pytest tests/test_agents.py -v
-```
+---
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+Contributions welcome! Here's how:
 
-## License
+1. Fork the repo
+2. Create your branch (`git checkout -b feature/cool-thing`)
+3. Make your changes
+4. Push and open a PR
 
-MIT License - see [LICENSE](LICENSE) for details.
+---
 
-## References
+## Learn More
 
 - [dbt Documentation](https://docs.getdbt.com/)
 - [SSIS Package Format](https://docs.microsoft.com/en-us/sql/integration-services/)
 - [LangGraph](https://langchain-ai.github.io/langgraph/)
-- [Claude Agent SDK](https://docs.anthropic.com/en/docs/agents-and-tools)
-- [OpenTelemetry](https://opentelemetry.io/)
+
+---
+
+## License
+
+MIT — use it however you'd like. See [LICENSE](LICENSE) for details.
